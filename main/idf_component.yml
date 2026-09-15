@@ -42,7 +42,7 @@ dependencies:
   waveshare/esp_lcd_touch_cst9217: ^1.0.3
   espressif/esp_lcd_touch_cst816s: ^1.0.6
   lvgl/lvgl: ==9.5.0
-  esp_lvgl_port: ~2.6.0
+  # esp_lvgl_port：已 vendored 到 components/esp_lvgl_port（保留 COLOR_DEPTH_1 兼容补丁）
   espressif/esp_lvgl_adapter: ==0.6.3
   espressif/esp_io_expander_tca95xx_16bit: ^2.0.0
   espressif2022/image_player: ^1.1.1

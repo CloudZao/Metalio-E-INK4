@@ -4,6 +4,8 @@ components/*
 !components/esp-ml307/**
 !components/esp-wifi-connect/
 !components/esp-wifi-connect/**
+!components/esp_lvgl_port/
+!components/esp_lvgl_port/**
 managed_components/
 build/
 .vscode/
