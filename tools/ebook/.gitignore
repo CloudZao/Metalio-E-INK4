@@ -13,3 +13,4 @@ build/
 # 大体积本地资源，勿入库（Gitee 单文件上限 100MB）
 ebook.zip
 test-book/
+book/
