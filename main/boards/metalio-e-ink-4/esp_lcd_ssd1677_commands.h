@@ -1,0 +1,75 @@
+/*
+ * SPDX-FileCopyrightText: 2026
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#pragma once
+
+#include <stdint.h>
+
+// SSD1677 面板命令定义，适配 GDEM0397T81 800x480。
+
+#define SSD1677_CMD_SWRST                    0x12
+#define SSD1677_CMD_DRIVER_OUTPUT_CTRL       0x01
+#define SSD1677_CMD_GATE_VOLTAGE_CTRL        0x03
+#define SSD1677_CMD_SOURCE_VOLTAGE_CTRL      0x04
+#define SSD1677_CMD_BOOSTER_SOFT_START       0x0C
+#define SSD1677_CMD_DEEP_SLEEP               0x10
+#define SSD1677_CMD_DATA_ENTRY_MODE          0x11
+#define SSD1677_CMD_TEMP_SENSOR_CTRL         0x18
+#define SSD1677_CMD_MASTER_ACTIVATION        0x20
+#define SSD1677_CMD_DISP_UPDATE_CTRL1        0x21
+#define SSD1677_CMD_DISP_UPDATE_CTRL2        0x22
+#define SSD1677_CMD_WRITE_BW_VRAM            0x24
+#define SSD1677_CMD_WRITE_RED_VRAM           0x26
+#define SSD1677_CMD_WRITE_VCOM               0x2C
+#define SSD1677_CMD_WRITE_LUT                0x32
+#define SSD1677_CMD_PING_PONG                0x37
+#define SSD1677_CMD_WRITE_TEMP_REG           0x1A
+#define SSD1677_CMD_SET_BORDER_WAVEFORM      0x3C
+/** 全刷完成后厂商测试指令（参数 0x01） */
+#define SSD1677_CMD_POST_FULL_UPDATE_OPT   0x3F
+#define SSD1677_CMD_SET_RAMX_START_END_POS   0x44
+#define SSD1677_CMD_SET_RAMY_START_END_POS   0x45
+#define SSD1677_CMD_SET_INIT_X_ADDR_COUNTER  0x4E
+#define SSD1677_CMD_SET_INIT_Y_ADDR_COUNTER  0x4F
+
+#define SSD1677_PARAM_POST_FULL_UPDATE_OPT           0x02 // 全刷前 0x3F
+
+#define SSD1677_PARAM_DATA_ENTRY_MODE_XY_INC_Y_DEC 0x01
+#define SSD1677_PARAM_BORDER_WAVEFORM              0x01
+// 边框波形与 VCOM 配合，减少局刷和关机全刷时边缘发灰。
+#define SSD1677_PARAM_BORDER_WAVEFORM_VCOM         0x80
+#define SSD1677_PARAM_TEMP_SENSOR_INTERNAL         0x80
+// Booster soft-start 的 A~D 相同，E 由宏切换档位。
+#ifndef SSD1677_BOOSTER_SOFT_START_LEVEL
+#define SSD1677_BOOSTER_SOFT_START_LEVEL           2 // 1→E=0x40；2→E=0x80
+#endif
+#define SSD1677_PARAM_BOOSTER_SOFT_START_A         0xAE
+#define SSD1677_PARAM_BOOSTER_SOFT_START_B         0xC7
+#define SSD1677_PARAM_BOOSTER_SOFT_START_C         0xC3
+#define SSD1677_PARAM_BOOSTER_SOFT_START_D         0xC0
+#if SSD1677_BOOSTER_SOFT_START_LEVEL == 1
+#define SSD1677_PARAM_BOOSTER_SOFT_START_E         0x40
+#else
+#define SSD1677_PARAM_BOOSTER_SOFT_START_E         0x80
+#endif
+// Deep Sleep 参数，按 demo 取 0x10 / 0x01。
+#define SSD1677_PARAM_DEEP_SLEEP                   0x03
+
+#define SSD1677_PARAM_DISP_UPDATE_CTRL1_BYPASS_RED 0x40
+#define SSD1677_PARAM_DISP_UPDATE_CTRL1_NORMAL     0x00
+
+#define SSD1677_PARAM_DISP_UPDATE_FULL             0xC4 // MCU LUT 全刷
+#define SSD1677_PARAM_DISP_UPDATE_FULL_STANDBY     0xC4 // 进/出待机与关机全刷
+
+#define SSD1677_PARAM_DISP_UPDATE_FULL_FAST        0xD7
+
+#define SSD1677_PARAM_DISP_UPDATE_PARTIAL          0xCC // MCU 局刷 LUT
+
+#define SSD1677_PARAM_DISP_UPDATE_POWER_ON         0xE0
+#define SSD1677_PARAM_DISP_UPDATE_POWER_OFF        0x83
+
+#define SSD1677_PANEL_WIDTH                        800
+#define SSD1677_PANEL_HEIGHT                       480
+#define SSD1677_PANEL_BUFFER_SIZE                  (SSD1677_PANEL_WIDTH * SSD1677_PANEL_HEIGHT / 8)

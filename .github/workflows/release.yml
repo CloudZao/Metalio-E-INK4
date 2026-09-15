@@ -1,0 +1,164 @@
+# Release firmware on version tags (GitHub Actions → GitHub + Gitee Releases)
+#
+# Trigger:
+#   1. Bump PROJECT_VER in CMakeLists.txt
+#   2. git tag v2.0.58 && git push <remote> v2.0.58
+#
+# Firmware artifact:
+#   metalio-e-ink4-{PROJECT_VER}.bin   e.g. metalio-e-ink4-2.0.57.bin
+#
+# Secrets (repo Settings → Secrets and variables → Actions):
+#   GITEE_TOKEN  — required to publish Gitee Release (projects + attachments)
+#   GITEE_OWNER  — optional, default shenzhen-yunzao-network
+#   GITEE_REPO   — optional, default xingzhi-ai-397
+#
+# Safety: CI blanks main/cloudzao_endpoints.c before build (open firmware).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v2.0.57); empty = GITHUB_REF_NAME"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build firmware & publish
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.4
+      options: --user root
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.tag }}" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must look like vX.Y.Z, got: $TAG" >&2
+            exit 1
+          fi
+          VER="${TAG#v}"
+          CMAKE_VER="$(sed -n 's/^set(PROJECT_VER "\([^"]*\)").*/\1/p' CMakeLists.txt | head -1)"
+          if [[ "$VER" != "$CMAKE_VER" ]]; then
+            echo "Tag version ($VER) != CMakeLists PROJECT_VER ($CMAKE_VER)" >&2
+            exit 1
+          fi
+          ASSET="metalio-e-ink4-${VER}.bin"
+          {
+            echo "tag=$TAG"
+            echo "ver=$VER"
+            echo "asset=$ASSET"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved TAG=$TAG VER=$VER ASSET=$ASSET"
+
+      - name: Generate changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          {
+            echo "## metalio-e-ink4 ${{ steps.ver.outputs.ver }}"
+            echo
+            if [[ -n "$PREV" ]]; then
+              echo "Changes since \`${PREV}\`:"
+              echo
+              git log --pretty=format:'- %s (%h)' "${PREV}..${TAG}"
+            else
+              echo "Initial tagged release."
+              echo
+              git log --pretty=format:'- %s (%h)' -n 30
+            fi
+            echo
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Blank cloudzao endpoints (open firmware)
+        shell: bash
+        run: |
+          python3 scripts/blank_cloudzao_endpoints.py
+          if grep -nE '=\s*"[^"]+"' main/cloudzao_endpoints.c; then
+            echo "cloudzao_endpoints.c still has non-empty strings" >&2
+            exit 1
+          fi
+
+      - name: Build & merge firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f /opt/esp/entrypoint.sh ]]; then
+            # shellcheck disable=SC1091
+            source /opt/esp/entrypoint.sh >/dev/null || true
+          fi
+          if [[ -n "${IDF_PATH:-}" && -f "${IDF_PATH}/export.sh" ]]; then
+            # shellcheck disable=SC1091
+            . "${IDF_PATH}/export.sh"
+          fi
+          chmod +x merge_firmware.sh scripts/publish_gitee_release.sh
+          ./merge_firmware.sh
+          test -f "firmware/${{ steps.ver.outputs.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.asset }}
+          path: firmware/${{ steps.ver.outputs.asset }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: metalio-e-ink4-${{ steps.ver.outputs.ver }}
+          body_file: release_notes.md
+          files: firmware/${{ steps.ver.outputs.asset }}
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Gitee Release
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: ${{ secrets.GITEE_OWNER }}
+          GITEE_REPO: ${{ secrets.GITEE_REPO }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          RELEASE_NAME: metalio-e-ink4-${{ steps.ver.outputs.ver }}
+          BODY_FILE: release_notes.md
+          ASSET_PATH: firmware/${{ steps.ver.outputs.asset }}
+          TARGET_COMMITISH: ${{ github.sha }}
+        run: |
+          if [[ -z "${GITEE_TOKEN:-}" ]]; then
+            echo "GITEE_TOKEN not set — skip Gitee publish"
+            exit 0
+          fi
+          export GITEE_OWNER="${GITEE_OWNER:-shenzhen-yunzao-network}"
+          export GITEE_REPO="${GITEE_REPO:-xingzhi-ai-397}"
+          ./scripts/publish_gitee_release.sh
