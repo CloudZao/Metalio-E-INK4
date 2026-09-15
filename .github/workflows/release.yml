@@ -103,10 +103,7 @@ jobs:
         shell: bash
         run: |
           python3 scripts/blank_cloudzao_endpoints.py
-          if grep -nE '=\s*"[^"]+"' main/cloudzao_endpoints.c; then
-            echo "cloudzao_endpoints.c still has non-empty strings" >&2
-            exit 1
-          fi
+          python3 scripts/blank_cloudzao_endpoints.py --check
 
       - name: Build & merge firmware
         shell: bash

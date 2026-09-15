@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Block commit if staged main/cloudzao_endpoints.c has non-empty string literals.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$ROOT/scripts/blank_cloudzao_endpoints.py"
+if command -v py >/dev/null 2>&1; then
+  exec py -3 "$SCRIPT" --check-index
+elif command -v python3 >/dev/null 2>&1; then
+  exec python3 "$SCRIPT" --check-index
+elif command -v python >/dev/null 2>&1; then
+  exec python "$SCRIPT" --check-index
+fi
+echo "python not found (need py/python3/python) to run $SCRIPT" >&2
+exit 1

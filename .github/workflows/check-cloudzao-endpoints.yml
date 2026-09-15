@@ -1,0 +1,13 @@
+name: Check cloudzao endpoints blank
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require empty cloudzao_endpoints.c strings
+        run: python3 scripts/blank_cloudzao_endpoints.py --check
