@@ -32,10 +32,10 @@ constexpr const char* kScreenId = "network";
 
 constexpr size_t kMaxSsidLen = 32;
 constexpr size_t kMaxPasswordLen = 64;
-constexpr int kPageSize = 7;
+constexpr int kPageSizeFallback = 7;
 constexpr int kRestartCountdownSec = 3;
-constexpr int kRowH = 52;
-constexpr int kRowPadVer = 6;  // 两行 SSID 与底部分割线留缝；一行仍由 min_height 撑到 kRowH
+constexpr int kRowPadVer = 6;  // SSID 与底部分割线留缝；单行由对称上下 padding 保证垂直居中
+constexpr lv_coord_t kSavedActionBtnH = 40;  // 已保存行「设默认/删除」按钮高
 
 constexpr EventBits_t kBitScanDone = BIT0;
 constexpr EventBits_t kBitConnected = BIT1;
@@ -62,7 +62,8 @@ struct UiState {
     // 密码页（全屏，非弹框）：上 SSID+输入，下键盘
     lv_obj_t* pwd_page = nullptr;
     lv_obj_t* pwd_ssid_lbl = nullptr;
-    lv_obj_t* pwd_textarea = nullptr;
+    lv_obj_t* pwd_box = nullptr;   // 输入框边框容器
+    lv_obj_t* pwd_lbl = nullptr;   // 与拨号页一致：label 显示，避免 textarea 重
     lv_obj_t* pwd_keyboard = nullptr;
     lv_obj_t* status_overlay = nullptr;
     lv_obj_t* status_msg = nullptr;
@@ -78,6 +79,8 @@ bool s_connect_in_progress = false;
 Tab s_tab = Tab::kNearby;
 int s_nearby_page = 0;
 int s_saved_page = 0;
+int s_nearby_page_size = kPageSizeFallback;
+int s_saved_page_size = kPageSizeFallback;
 std::string s_pending_ssid;
 wifi_auth_mode_t s_pending_authmode = WIFI_AUTH_OPEN;
 
@@ -89,6 +92,7 @@ constexpr lv_coord_t kKbGap = 4;
 KbMode s_kb_mode = KbMode::kEn;
 bool s_kb_upper = false;
 lv_obj_t* s_kb_keys[kKbRows * kKbCols] = {};
+char s_password[kMaxPasswordLen + 1] = {};
 
 esp_netif_t* s_netif = nullptr;
 esp_event_handler_instance_t s_wifi_evt_inst = nullptr;
@@ -177,13 +181,50 @@ void Strip(lv_obj_t* obj) {
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-/** 名称可折两行：行高随内容，上下内边距避免贴分割线；单行仍不低于 kRowH。 */
-void StyleWifiNameRow(lv_obj_t* row, lv_obj_t* name) {
+lv_coord_t UiLineH() {
     const lv_font_t* font = fontpack_lv_font_ui();
-    const lv_coord_t line_h = font != nullptr ? static_cast<lv_coord_t>(font->line_height) : 28;
+    return font != nullptr ? static_cast<lv_coord_t>(font->line_height) : 28;
+}
+
+/** 附近列表按单行高度估条数，尽量填满刷新按钮上方后再换页。 */
+lv_coord_t NearbyRowHEstimate() {
+    return UiLineH() + kRowPadVer * 2 + 1;
+}
+
+/** 已保存行含操作按钮，按按钮高度估，避免一页挤爆。 */
+lv_coord_t SavedRowHEstimate() {
+    return std::max(NearbyRowHEstimate(), kSavedActionBtnH + kRowPadVer * 2 + 1);
+}
+
+int ComputeListPageSize(lv_coord_t row_h) {
+    if (s_ui.list == nullptr) {
+        return kPageSizeFallback;
+    }
+    if (s_ui.screen != nullptr) {
+        lv_obj_update_layout(s_ui.screen);
+    } else {
+        lv_obj_update_layout(s_ui.list);
+    }
+    lv_coord_t h = lv_obj_get_content_height(s_ui.list);
+    if (h <= 0) {
+        h = lv_obj_get_height(s_ui.list);
+    }
+    // 行高略放大，吸收字高/底边框取整误差，避免末行压到刷新按钮
+    const lv_coord_t fit_h = std::max<lv_coord_t>(1, row_h + 2);
+    const int n = static_cast<int>(h / fit_h);
+    return std::max(1, n);
+}
+
+void RefreshPageSizes() {
+    s_nearby_page_size = ComputeListPageSize(NearbyRowHEstimate());
+    s_saved_page_size = ComputeListPageSize(SavedRowHEstimate());
+}
+
+/** 名称可折两行：行高随内容，上下对称内边距避免贴分割线，同时保证单/两行垂直居中。 */
+void StyleWifiNameRow(lv_obj_t* row, lv_obj_t* name) {
+    const lv_coord_t line_h = UiLineH();
     lv_obj_set_style_pad_hor(row, 4, 0);
     lv_obj_set_style_pad_ver(row, kRowPadVer, 0);
-    lv_obj_set_style_min_height(row, kRowH, 0);
     lv_obj_set_height(row, LV_SIZE_CONTENT);
     lv_obj_set_width(name, 0);
     lv_obj_set_flex_grow(name, 1);
@@ -742,7 +783,8 @@ int NearbyPageCount() {
     if (s_scan_results.empty()) {
         return 1;
     }
-    return static_cast<int>((s_scan_results.size() + kPageSize - 1) / kPageSize);
+    const int ps = std::max(1, s_nearby_page_size);
+    return static_cast<int>((s_scan_results.size() + ps - 1) / ps);
 }
 
 int SavedPageCount() {
@@ -750,7 +792,8 @@ int SavedPageCount() {
     if (n == 0) {
         return 1;
     }
-    return static_cast<int>((n + kPageSize - 1) / kPageSize);
+    const int ps = std::max(1, s_saved_page_size);
+    return static_cast<int>((n + ps - 1) / ps);
 }
 
 void RebuildNearbyPage() {
@@ -767,8 +810,9 @@ void RebuildNearbyPage() {
         lv_obj_t* hint = lv_label_create(s_ui.list);
         lv_label_set_text(hint, Lang::Strings::NETWORK_SCANNING);
         lv_obj_set_style_text_font(hint, fontpack_lv_font_ui(), 0);
+        // 页码保持占位高度，避免底栏变矮后列表区虚高、末行压住刷新
         if (s_ui.page_lbl != nullptr) {
-            lv_label_set_text(s_ui.page_lbl, "");
+            lv_label_set_text(s_ui.page_lbl, "1 / 1");
         }
         return;
     }
@@ -798,8 +842,9 @@ void RebuildNearbyPage() {
         lv_label_set_text(s_ui.page_lbl, foot);
     }
 
-    const int start = s_nearby_page * kPageSize;
-    const int end = std::min(start + kPageSize, static_cast<int>(s_scan_results.size()));
+    const int ps = std::max(1, s_nearby_page_size);
+    const int start = s_nearby_page * ps;
+    const int end = std::min(start + ps, static_cast<int>(s_scan_results.size()));
     for (int i = start; i < end; ++i) {
         const auto& ap = s_scan_results[static_cast<size_t>(i)];
         lv_obj_t* row = lv_obj_create(s_ui.list);
@@ -876,8 +921,9 @@ void RebuildSavedPage() {
         lv_label_set_text(s_ui.page_lbl, foot);
     }
 
-    const int start = s_saved_page * kPageSize;
-    const int end = std::min(start + kPageSize, static_cast<int>(list.size()));
+    const int ps = std::max(1, s_saved_page_size);
+    const int start = s_saved_page * ps;
+    const int end = std::min(start + ps, static_cast<int>(list.size()));
     for (int i = start; i < end; ++i) {
         const auto& item = list[static_cast<size_t>(i)];
         lv_obj_t* row = lv_obj_create(s_ui.list);
@@ -903,14 +949,14 @@ void RebuildSavedPage() {
 
         if (i != 0) {
             auto* def_ctx = new SavedActionCtx{i};
-            lv_obj_t* def_btn = MakeBtn(row, Lang::Strings::NETWORK_SET_DEFAULT, 88, 40, OnSavedSetDefault,
-                                        def_ctx);
+            lv_obj_t* def_btn = MakeBtn(row, Lang::Strings::NETWORK_SET_DEFAULT, 88, kSavedActionBtnH,
+                                        OnSavedSetDefault, def_ctx);
             lv_obj_add_event_cb(def_btn, OnSavedBtnDelete, LV_EVENT_DELETE, def_ctx);
         }
 
         auto* del_ctx = new SavedActionCtx{i};
         lv_obj_t* del_btn =
-            MakeBtn(row, Lang::Strings::NETWORK_DELETE, 72, 40, OnSavedRemove, del_ctx);
+            MakeBtn(row, Lang::Strings::NETWORK_DELETE, 72, kSavedActionBtnH, OnSavedRemove, del_ctx);
         lv_obj_add_event_cb(del_btn, OnSavedBtnDelete, LV_EVENT_DELETE, del_ctx);
     }
 }
@@ -962,32 +1008,48 @@ struct KbKeyDesc {
     KbAction action;
 };
 
-void AppendToPassword(const char* text) {
-    if (s_ui.pwd_textarea == nullptr || text == nullptr || text[0] == '\0') {
+void RefreshPasswordDisplay() {
+    if (s_ui.pwd_lbl == nullptr) {
         return;
     }
-    lv_textarea_set_cursor_pos(s_ui.pwd_textarea, LV_TEXTAREA_CURSOR_LAST);
-    lv_textarea_add_text(s_ui.pwd_textarea, text);
+    if (s_password[0] == '\0') {
+        lv_label_set_text(s_ui.pwd_lbl, Lang::Strings::NETWORK_PWD_PLACEHOLDER);
+        lv_obj_set_style_text_opa(s_ui.pwd_lbl, LV_OPA_50, 0);
+    } else {
+        lv_label_set_text(s_ui.pwd_lbl, s_password);
+        lv_obj_set_style_text_opa(s_ui.pwd_lbl, LV_OPA_COVER, 0);
+    }
+}
+
+void AppendToPassword(const char* text) {
+    if (s_ui.pwd_lbl == nullptr || text == nullptr || text[0] == '\0') {
+        return;
+    }
+    const size_t cur = std::strlen(s_password);
+    const size_t add = std::strlen(text);
+    if (add == 0 || cur + add > kMaxPasswordLen) {
+        return;
+    }
+    std::memcpy(s_password + cur, text, add + 1);
+    RefreshPasswordDisplay();
 }
 
 void BackspacePassword() {
-    if (s_ui.pwd_textarea == nullptr) {
+    size_t len = std::strlen(s_password);
+    if (len == 0) {
         return;
     }
-    const char* txt = lv_textarea_get_text(s_ui.pwd_textarea);
-    if (txt == nullptr || txt[0] == '\0') {
-        return;
-    }
-    // 密码框光标偶发停在 0，delete_char 会直接 return；先移到末尾再删
-    lv_textarea_set_cursor_pos(s_ui.pwd_textarea, LV_TEXTAREA_CURSOR_LAST);
-    lv_textarea_delete_char(s_ui.pwd_textarea);
+    // UTF-8：退掉末尾完整码点（中文标点等）
+    do {
+        --len;
+    } while (len > 0 && (static_cast<unsigned char>(s_password[len]) & 0xC0) == 0x80);
+    s_password[len] = '\0';
+    RefreshPasswordDisplay();
 }
 
 void ClearPassword() {
-    if (s_ui.pwd_textarea == nullptr) {
-        return;
-    }
-    lv_textarea_set_text(s_ui.pwd_textarea, "");
+    s_password[0] = '\0';
+    RefreshPasswordDisplay();
 }
 
 void OnBackspaceLongPressed(lv_event_t* /*e*/) {
@@ -1057,7 +1119,8 @@ void FillKbLayout(KbKeyDesc out[kKbRows * kKbCols]) {
     put(base + 5, "删", nullptr, KbAction::kBackspace);
 }
 
-void OnCustomKeyClicked(lv_event_t* e) {
+/** 字符/空格/退格：按下即写入（跟盖板键「按下即 Click」、拨号盘跟手一致）。 */
+void OnCustomKeyPressed(lv_event_t* e) {
     const auto action = static_cast<KbAction>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
     lv_obj_t* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_obj_t* lbl = (btn != nullptr) ? lv_obj_get_child(btn, 0) : nullptr;
@@ -1067,6 +1130,28 @@ void OnCustomKeyClicked(lv_event_t* e) {
         case KbAction::kBackspace:
             BackspacePassword();
             break;
+        case KbAction::kSpace:
+            AppendToPassword(" ");
+            break;
+        case KbAction::kChar:
+            if (label != nullptr) {
+                AppendToPassword(label);
+            }
+            break;
+        case KbAction::kShift:
+        case KbAction::kModeEn:
+        case KbAction::kModeSym:
+        case KbAction::kEmpty:
+        default:
+            break;
+    }
+}
+
+/** 切布局：松手再建盘，避免 PRESSED 里 lv_obj_clean 删掉当前按键。 */
+void OnCustomKeyClicked(lv_event_t* e) {
+    const auto action = static_cast<KbAction>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+
+    switch (action) {
         case KbAction::kShift:
             s_kb_upper = !s_kb_upper;
             RebuildCustomKeyboard();
@@ -1079,15 +1164,6 @@ void OnCustomKeyClicked(lv_event_t* e) {
             s_kb_mode = KbMode::kSym;
             RebuildCustomKeyboard();
             break;
-        case KbAction::kSpace:
-            AppendToPassword(" ");
-            break;
-        case KbAction::kChar:
-            if (label != nullptr) {
-                AppendToPassword(label);
-            }
-            break;
-        case KbAction::kEmpty:
         default:
             break;
     }
@@ -1165,8 +1241,15 @@ void RebuildCustomKeyboard() {
         lv_obj_set_style_radius(btn, 4, 0);
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
         HapticAttachClick(btn);
-        lv_obj_add_event_cb(btn, OnCustomKeyClicked, LV_EVENT_CLICKED,
-                            reinterpret_cast<void*>(static_cast<uintptr_t>(d.action)));
+        void* ud = reinterpret_cast<void*>(static_cast<uintptr_t>(d.action));
+        // 输入键按下即上屏；切 英/符/大小写 仍 CLICKED，防止重建时销毁按中的键
+        if (d.action == KbAction::kChar || d.action == KbAction::kSpace ||
+            d.action == KbAction::kBackspace) {
+            lv_obj_add_event_cb(btn, OnCustomKeyPressed, LV_EVENT_PRESSED, ud);
+        } else if (d.action == KbAction::kShift || d.action == KbAction::kModeEn ||
+                   d.action == KbAction::kModeSym) {
+            lv_obj_add_event_cb(btn, OnCustomKeyClicked, LV_EVENT_CLICKED, ud);
+        }
         if (d.action == KbAction::kBackspace) {
             // 与电话拨号页一致：短按删一字，长按清空
             lv_obj_add_event_cb(btn, OnBackspaceLongPressed, LV_EVENT_LONG_PRESSED, nullptr);
@@ -1189,11 +1272,7 @@ void RebuildCustomKeyboard() {
 }
 
 void OnPwdConnect(lv_event_t* /*e*/) {
-    if (s_ui.pwd_textarea == nullptr) {
-        return;
-    }
-    const char* pwd = lv_textarea_get_text(s_ui.pwd_textarea);
-    ScheduleConnect(s_pending_ssid, pwd != nullptr ? pwd : "");
+    ScheduleConnect(s_pending_ssid, s_password);
 }
 
 void OnPwdCancel(lv_event_t* /*e*/) { ClosePasswordPage(); }
@@ -1205,9 +1284,7 @@ void ClosePasswordPage() {
     if (s_ui.list_panel != nullptr) {
         lv_obj_clear_flag(s_ui.list_panel, LV_OBJ_FLAG_HIDDEN);
     }
-    if (s_ui.pwd_textarea != nullptr) {
-        lv_textarea_set_text(s_ui.pwd_textarea, "");
-    }
+    ClearPassword();
     s_kb_mode = KbMode::kEn;
     s_kb_upper = false;
 }
@@ -1248,20 +1325,32 @@ void BuildPasswordPage(lv_obj_t* parent, lv_coord_t top_y) {
         lv_obj_set_style_text_font(hint, ui, 0);
     }
 
-    lv_obj_t* ta = lv_textarea_create(top);
-    s_ui.pwd_textarea = ta;
-    lv_obj_set_width(ta, LV_PCT(100));
-    lv_obj_set_height(ta, 56);
-    lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_max_length(ta, kMaxPasswordLen);
-    lv_textarea_set_placeholder_text(ta, Lang::Strings::NETWORK_PWD_PLACEHOLDER);
+    // 与拨号号码行一致：label + 缓冲，按下即可刷字，无 textarea 光标/布局开销
+    lv_obj_t* box = lv_obj_create(top);
+    Strip(box);
+    s_ui.pwd_box = box;
+    lv_obj_set_width(box, LV_PCT(100));
+    lv_obj_set_height(box, 56);
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(box, lv_color_black(), 0);
+    lv_obj_set_style_border_width(box, 2, 0);
+    lv_obj_set_style_pad_hor(box, 10, 0);
+    lv_obj_set_style_pad_ver(box, 10, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    s_ui.pwd_lbl = lv_label_create(box);
+    lv_obj_set_width(s_ui.pwd_lbl, LV_PCT(100));
+    // 墨水屏勿用滚动动画（会连刷）；超长直接裁切
+    lv_label_set_long_mode(s_ui.pwd_lbl, LV_LABEL_LONG_CLIP);
     if (ui != nullptr) {
-        lv_obj_set_style_text_font(ta, ui, 0);
-        lv_obj_set_style_text_font(ta, ui, LV_PART_TEXTAREA_PLACEHOLDER);
+        lv_obj_set_style_text_font(s_ui.pwd_lbl, ui, 0);
     }
-    lv_obj_set_style_border_color(ta, lv_color_black(), 0);
-    lv_obj_set_style_border_width(ta, 2, 0);
-    lv_obj_set_style_pad_all(ta, 10, 0);
+    lv_obj_set_style_text_color(s_ui.pwd_lbl, lv_color_black(), 0);
+    lv_obj_clear_flag(s_ui.pwd_lbl, LV_OBJ_FLAG_CLICKABLE);
+    s_password[0] = '\0';
+    RefreshPasswordDisplay();
 
     lv_obj_t* row = lv_obj_create(top);
     Strip(row);
@@ -1300,10 +1389,7 @@ void OpenPasswordPage(const std::string& ssid, wifi_auth_mode_t authmode) {
     snprintf(ttext, sizeof(ttext), Lang::Strings::NETWORK_CONNECT_TO_FMT, ssid.c_str());
     lv_label_set_text(s_ui.pwd_ssid_lbl, ttext);
 
-    if (s_ui.pwd_textarea != nullptr) {
-        lv_textarea_set_text(s_ui.pwd_textarea, "");
-        lv_obj_add_state(s_ui.pwd_textarea, LV_STATE_FOCUSED);
-    }
+    ClearPassword();
 
     RebuildCustomKeyboard();
 
@@ -1432,6 +1518,8 @@ lv_obj_t* NetworkScreen::Create() {
     s_tab = Tab::kNearby;
     s_nearby_page = 0;
     s_saved_page = 0;
+    s_nearby_page_size = kPageSizeFallback;
+    s_saved_page_size = kPageSizeFallback;
     s_ui = {};
 
     lv_obj_t* scr = lv_obj_create(nullptr);
@@ -1503,13 +1591,15 @@ lv_obj_t* NetworkScreen::Create() {
     lv_obj_add_flag(s_ui.clear_btn, LV_OBJ_FLAG_HIDDEN);
 
     s_ui.page_lbl = lv_label_create(foot);
-    lv_label_set_text(s_ui.page_lbl, "");
+    // 先占位再量列表高：空字符串会让底栏偏矮，多算出一条压住刷新按钮
+    lv_label_set_text(s_ui.page_lbl, "1 / 1");
     lv_obj_set_width(s_ui.page_lbl, LV_PCT(100));
     lv_obj_set_style_text_align(s_ui.page_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(s_ui.page_lbl, fontpack_lv_font_ui(), 0);
 
     BuildPasswordPage(scr, status.height);
 
+    RefreshPageSizes();
     RebuildListPage();
 
     ScreenSetIsHome(false);
