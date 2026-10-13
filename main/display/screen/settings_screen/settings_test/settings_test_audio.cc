@@ -18,54 +18,54 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-namespace settings_test_audio_detail {
+static constexpr const char* kTag = "SettingsTestAudio";
+static constexpr uint32_t kMaxRecordMs = 5000;
+static constexpr uint32_t kPlaybackMarginMs = 500;
+static constexpr uint32_t kConfirmDelayMs = 1000;
 
-constexpr const char* kTag = "SettingsTestAudio";
-constexpr uint32_t kMaxRecordMs = 5000;
-constexpr uint32_t kPlaybackMarginMs = 500;
-constexpr uint32_t kConfirmDelayMs = 1000;
-
-enum class State {
-    Idle,
-    Recording,
-    Playing,
+enum class SettingsTestAudioState {
+    Idle, // 空闲
+    Recording, // 录音中
+    Playing, // 回放中
 };
 
-State s_state = State::Idle;
-bool s_wake_disabled = false;
-bool s_holding_testing_state = false;
-DeviceState s_saved_device_state = kDeviceStateIdle;
-int64_t s_record_start_us = 0;
+static SettingsTestAudioState s_state = SettingsTestAudioState::Idle;
+static bool s_wake_disabled = false;
+static bool s_holding_testing_state = false;
+static DeviceState s_saved_device_state = kDeviceStateIdle;
+static int64_t s_record_start_us = 0;
 
-lv_obj_t* s_record_btn = nullptr;
-lv_obj_t* s_record_lbl = nullptr;
-lv_obj_t* s_confirm_mask = nullptr;
-lv_timer_t* s_max_record_timer = nullptr;
-lv_timer_t* s_playback_timer = nullptr;
-lv_timer_t* s_confirm_timer = nullptr;
+static lv_obj_t* s_record_btn = nullptr;
+static lv_obj_t* s_record_lbl = nullptr;
+static lv_obj_t* s_confirm_mask = nullptr;
+static lv_timer_t* s_max_record_timer = nullptr;
+static lv_timer_t* s_playback_timer = nullptr;
+static lv_timer_t* s_confirm_timer = nullptr;
 
-std::atomic<bool> s_audio_ready{false};
-TaskHandle_t s_audio_init_task = nullptr;
+static std::atomic<bool> s_audio_ready{false};
+static TaskHandle_t s_audio_init_task = nullptr;
+static bool s_press_held = false; // 按住说话：手指未抬；音频未就绪时等 init 完成再开录
 
-void UpdateButtonUi();
-void KickAudioInitIfNeeded();
-void LeaveAudioTestingState();
+static void UpdateButtonUi();
+static void KickAudioInitIfNeeded();
+static void LeaveAudioTestingState();
+static void StartRecording();
 
-void StopConfirmTimer() {
+static void StopConfirmTimer() {
     if (s_confirm_timer != nullptr) {
         lv_timer_delete(s_confirm_timer);
         s_confirm_timer = nullptr;
     }
 }
 
-void CloseConfirmDialog() {
+static void CloseConfirmDialog() {
     if (s_confirm_mask != nullptr && SettingsTest_IsLive()) {
         lv_obj_delete(s_confirm_mask);
     }
     s_confirm_mask = nullptr;
 }
 
-void OnAudioConfirmResult(bool pass) {
+static void OnAudioConfirmResult(bool pass) {
     if (!SettingsTest_IsLive()) {
         return;
     }
@@ -73,17 +73,17 @@ void OnAudioConfirmResult(bool pass) {
     ESP_LOGI(kTag, "user confirm audio: %s", pass ? "pass" : "fail");
 }
 
-void OnConfirmYesClicked(lv_event_t* /*e*/) {
+static void OnConfirmYesClicked(lv_event_t* /*e*/) {
     CloseConfirmDialog();
     OnAudioConfirmResult(true);
 }
 
-void OnConfirmNoClicked(lv_event_t* /*e*/) {
+static void OnConfirmNoClicked(lv_event_t* /*e*/) {
     CloseConfirmDialog();
     OnAudioConfirmResult(false);
 }
 
-void ShowConfirmDialog() {
+static void ShowConfirmDialog() {
     if (!SettingsTest_IsLive() || SettingsTest_Ui().root_scr == nullptr ||
         s_confirm_mask != nullptr) {
         return;
@@ -153,7 +153,7 @@ void ShowConfirmDialog() {
     make_btn(Lang::Strings::SETTINGS_TEST_NO, OnConfirmNoClicked);
 }
 
-void OnConfirmTimer(lv_timer_t* /*t*/) {
+static void OnConfirmTimer(lv_timer_t* /*t*/) {
     s_confirm_timer = nullptr;
     if (!SettingsTest_IsLive()) {
         return;
@@ -161,37 +161,37 @@ void OnConfirmTimer(lv_timer_t* /*t*/) {
     ShowConfirmDialog();
 }
 
-void ScheduleConfirmDialog() {
+static void ScheduleConfirmDialog() {
     StopConfirmTimer();
     s_confirm_timer = lv_timer_create(OnConfirmTimer, kConfirmDelayMs, nullptr);
     lv_timer_set_repeat_count(s_confirm_timer, 1);
 }
 
-void StopPlaybackTimer() {
+static void StopPlaybackTimer() {
     if (s_playback_timer != nullptr) {
         lv_timer_delete(s_playback_timer);
         s_playback_timer = nullptr;
     }
 }
 
-void FinishPlaybackUi() {
-    if (s_state != State::Playing || !SettingsTest_IsLive()) {
+static void FinishPlaybackUi() {
+    if (s_state != SettingsTestAudioState::Playing || !SettingsTest_IsLive()) {
         return;
     }
     StopPlaybackTimer();
     LeaveAudioTestingState();
-    s_state = State::Idle;
+    s_state = SettingsTestAudioState::Idle;
     UpdateButtonUi();
     ScheduleConfirmDialog();
     ESP_LOGI(kTag, "playback finished");
 }
 
-void OnPlaybackTimer(lv_timer_t* /*t*/) {
+static void OnPlaybackTimer(lv_timer_t* /*t*/) {
     s_playback_timer = nullptr;
     FinishPlaybackUi();
 }
 
-void SchedulePlaybackUiReset() {
+static void SchedulePlaybackUiReset() {
     const int64_t now = esp_timer_get_time();
     int duration_ms = static_cast<int>((now - s_record_start_us) / 1000);
     if (duration_ms < 1) {
@@ -204,7 +204,7 @@ void SchedulePlaybackUiReset() {
     lv_timer_set_repeat_count(s_playback_timer, 1);
 }
 
-void RestoreWakeWord() {
+static void RestoreWakeWord() {
     if (!s_wake_disabled) {
         return;
     }
@@ -212,7 +212,7 @@ void RestoreWakeWord() {
     s_wake_disabled = false;
 }
 
-void DisableWakeWordIfNeeded() {
+static void DisableWakeWordIfNeeded() {
     auto& as = Application::GetInstance().GetAudioService();
     if (!as.IsWakeWordRunning()) {
         return;
@@ -222,7 +222,7 @@ void DisableWakeWordIfNeeded() {
 }
 
 // PowerPolicy 仅在 Speaking / AudioTesting 时开 PA；自检只走 EnableAudioTesting，需同步 DeviceState。
-void EnterAudioTestingState() {
+static void EnterAudioTestingState() {
     if (s_holding_testing_state) {
         return;
     }
@@ -234,7 +234,7 @@ void EnterAudioTestingState() {
     s_holding_testing_state = true;
 }
 
-void LeaveAudioTestingState() {
+static void LeaveAudioTestingState() {
     if (!s_holding_testing_state) {
         return;
     }
@@ -250,37 +250,37 @@ void LeaveAudioTestingState() {
     app.SetDeviceState(restore);
 }
 
-void UpdateButtonUi() {
+static void UpdateButtonUi() {
     lv_obj_t* row = SettingsTest_Ui().audio.row;
     if (!SettingsTest_Ui().alive || row == nullptr || s_record_lbl == nullptr) {
         return;
     }
 
     switch (s_state) {
-    case State::Idle:
+    case SettingsTestAudioState::Idle:
         lv_label_set_text(s_record_lbl, Lang::Strings::SETTINGS_TEST_AUDIO_HOLD);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         break;
-    case State::Recording:
+    case SettingsTestAudioState::Recording:
         lv_label_set_text(s_record_lbl, Lang::Strings::SETTINGS_TEST_AUDIO_RECORDING);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         break;
-    case State::Playing:
+    case SettingsTestAudioState::Playing:
         lv_label_set_text(s_record_lbl, Lang::Strings::RECORD_PLAYING);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
         break;
     }
 }
 
-void StopMaxRecordTimer() {
+static void StopMaxRecordTimer() {
     if (s_max_record_timer != nullptr) {
         lv_timer_delete(s_max_record_timer);
         s_max_record_timer = nullptr;
     }
 }
 
-void StopRecordingAndPlay() {
-    if (s_state != State::Recording) {
+static void StopRecordingAndPlay() {
+    if (s_state != SettingsTestAudioState::Recording) {
         return;
     }
 
@@ -288,20 +288,20 @@ void StopRecordingAndPlay() {
     auto& as = Application::GetInstance().GetAudioService();
     as.EnableAudioTesting(false);
     RestoreWakeWord();
-    s_state = State::Playing;
+    s_state = SettingsTestAudioState::Playing;
     UpdateButtonUi();
     SchedulePlaybackUiReset();
     ESP_LOGI(kTag, "record stopped, playback started");
 }
 
-void OnMaxRecordTimer(lv_timer_t* /*t*/) {
+static void OnMaxRecordTimer(lv_timer_t* /*t*/) {
     s_max_record_timer = nullptr;
     ESP_LOGI(kTag, "max record duration reached (%lums)", kMaxRecordMs);
     StopRecordingAndPlay();
 }
 
-void StartRecording() {
-    if (s_state != State::Idle || !SettingsTest_IsLive()) {
+static void StartRecording() {
+    if (s_state != SettingsTestAudioState::Idle || !SettingsTest_IsLive()) {
         return;
     }
 
@@ -310,7 +310,9 @@ void StartRecording() {
 
     auto& as = Application::GetInstance().GetAudioService();
     if (!as.IsStarted()) {
-        ESP_LOGW(kTag, "audio service not started");
+        // 等 AudioInitTask；手指仍按住则就绪后补开录
+        ESP_LOGI(kTag, "audio not ready, defer record while held=%d", s_press_held ? 1 : 0);
+        KickAudioInitIfNeeded();
         return;
     }
     if (as.IsAudioProcessorRunning()) {
@@ -324,7 +326,7 @@ void StartRecording() {
     as.EnableAudioTesting(true);
 
     s_record_start_us = esp_timer_get_time();
-    s_state = State::Recording;
+    s_state = SettingsTestAudioState::Recording;
     UpdateButtonUi();
     StopMaxRecordTimer();
     s_max_record_timer = lv_timer_create(OnMaxRecordTimer, kMaxRecordMs, nullptr);
@@ -332,59 +334,66 @@ void StartRecording() {
     ESP_LOGI(kTag, "recording started");
 }
 
-void OnRecordPressed(lv_event_t* /*e*/) {
+static void OnRecordPressed(lv_event_t* /*e*/) {
+    s_press_held = true;
     KickAudioInitIfNeeded();
     StartRecording();
 }
 
-void OnRecordReleased(lv_event_t* e) {
+static void OnRecordReleased(lv_event_t* e) {
     const lv_event_code_t code = lv_event_get_code(e);
     if (code != LV_EVENT_RELEASED && code != LV_EVENT_PRESS_LOST) {
         return;
     }
-    if (s_state == State::Recording) {
+    s_press_held = false;
+    if (s_state == SettingsTestAudioState::Recording) {
         StopRecordingAndPlay();
     }
 }
 
-void ForceStopWithoutPlayback() {
+static void ForceStopWithoutPlayback() {
+    s_press_held = false;
     StopMaxRecordTimer();
     StopPlaybackTimer();
     StopConfirmTimer();
     CloseConfirmDialog();
 
     auto& as = Application::GetInstance().GetAudioService();
-    if (s_state == State::Recording) {
+    if (s_state == SettingsTestAudioState::Recording) {
         as.ResetDecoder();
         as.EnableAudioTesting(false);
-    } else if (s_state == State::Playing) {
+    } else if (s_state == SettingsTestAudioState::Playing) {
         as.ResetDecoder();
     }
     LeaveAudioTestingState();
     RestoreWakeWord();
-    s_state = State::Idle;
+    s_state = SettingsTestAudioState::Idle;
 }
 
-void AsyncUpdateButtonUi(void* /*p*/) {
+static void AsyncOnAudioReady(void* /*p*/) {
     if (!SettingsTest_Ui().alive) {
         return;
     }
     UpdateButtonUi();
+    // 进页预热后仍可能首按撞上未就绪：手指未抬则补开录
+    if (s_press_held) {
+        StartRecording();
+    }
 }
 
-void AudioInitTask(void* /*arg*/) {
+static void AudioInitTask(void* /*arg*/) {
     Application::GetInstance().EnsureAudioServiceRunning();
     s_audio_ready.store(Application::GetInstance().GetAudioService().IsStarted());
     s_audio_init_task = nullptr;
     if (SettingsTest_IsLive()) {
-        if (!SettingsTest_PostLvAsync(AsyncUpdateButtonUi, nullptr)) {
-            ESP_LOGW(kTag, "PostLvAsync for audio ready ui failed");
+        if (!SettingsTest_PostLvAsync(AsyncOnAudioReady, nullptr)) {
+            ESP_LOGW(kTag, "PostLvAsync for audio ready failed");
         }
     }
     vTaskDelete(nullptr);
 }
 
-void KickAudioInitIfNeeded() {
+static void KickAudioInitIfNeeded() {
     if (s_audio_ready.load() &&
         Application::GetInstance().GetAudioService().IsStarted()) {
         return;
@@ -400,7 +409,7 @@ void KickAudioInitIfNeeded() {
     }
 }
 
-void BuildRowInternal(lv_obj_t* parent) {
+static void BuildRowInternal(lv_obj_t* parent) {
     auto& ui = SettingsTest_Ui();
 
     lv_obj_t* row = lv_obj_create(parent);
@@ -462,32 +471,32 @@ void BuildRowInternal(lv_obj_t* parent) {
     lv_obj_clear_flag(s_record_lbl, LV_OBJ_FLAG_CLICKABLE);
 }
 
-}  // namespace settings_test_audio_detail
 
 void SettingsTestAudio_BuildRow(lv_obj_t* parent) {
-    settings_test_audio_detail::BuildRowInternal(parent);
+    BuildRowInternal(parent);
 }
 
 void SettingsTestAudio_OnLoad() {
-    settings_test_audio_detail::s_state = settings_test_audio_detail::State::Idle;
-    settings_test_audio_detail::UpdateButtonUi();
+    s_state = SettingsTestAudioState::Idle;
+    s_press_held = false;
+    KickAudioInitIfNeeded();
+    UpdateButtonUi();
 }
 
 void SettingsTestAudio_Teardown() {
-    settings_test_audio_detail::ForceStopWithoutPlayback();
-    settings_test_audio_detail::s_record_btn = nullptr;
-    settings_test_audio_detail::s_record_lbl = nullptr;
-    settings_test_audio_detail::s_confirm_mask = nullptr;
-    settings_test_audio_detail::s_audio_ready.store(false);
+    ForceStopWithoutPlayback();
+    s_record_btn = nullptr;
+    s_record_lbl = nullptr;
+    s_confirm_mask = nullptr;
+    s_audio_ready.store(false);
 }
 
 void SettingsTestAudio_Poll() {
     if (!SettingsTest_IsLive()) {
         return;
     }
-    if (settings_test_audio_detail::s_state != settings_test_audio_detail::State::Playing ||
-        settings_test_audio_detail::s_playback_timer != nullptr) {
+    if (s_state != SettingsTestAudioState::Playing || s_playback_timer != nullptr) {
         return;
     }
-    settings_test_audio_detail::FinishPlaybackUi();
+    FinishPlaybackUi();
 }

@@ -82,7 +82,7 @@ bool EncodeCoverBytesToSidecar(const char* book_path, const uint8_t* data, size_
             return false;
         }
         if (!ShouldUpgradeSidecar(sidecar, new_w, new_h)) {
-            ESP_LOGI(TAG, "sidecar keep (a2i1 not larger): %s", sidecar);
+            ESP_LOGD(TAG, "sidecar keep (a2i1 not larger): %s", sidecar);
             return true;
         }
         file_bytes.assign(data, data + len);
@@ -96,7 +96,7 @@ bool EncodeCoverBytesToSidecar(const char* book_path, const uint8_t* data, size_
         new_w = l8.width;
         new_h = l8.height;
         if (!ShouldUpgradeSidecar(sidecar, new_w, new_h)) {
-            ESP_LOGI(TAG, "sidecar keep (decode not larger): %s", sidecar);
+            ESP_LOGD(TAG, "sidecar keep (decode not larger): %s", sidecar);
             return true;
         }
         if (!EncodeL8ToA2i1(l8, file_bytes) ||
@@ -110,7 +110,7 @@ bool EncodeCoverBytesToSidecar(const char* book_path, const uint8_t* data, size_
         ESP_LOGW(TAG, "sidecar write fail: %s", sidecar);
         return false;
     }
-    ESP_LOGI(TAG, "sidecar saved %s (%u bytes %dx%d)", sidecar,
+    ESP_LOGD(TAG, "sidecar saved %s (%u bytes %dx%d)", sidecar,
              static_cast<unsigned>(file_bytes.size()), new_w, new_h);
     return true;
 }
@@ -158,7 +158,7 @@ bool SaveBookCoverSidecarFromL8(const char* book_path, const RasterImage& l8) {
         return false;
     }
     if (!ShouldUpgradeSidecar(sidecar, l8.width, l8.height)) {
-        ESP_LOGI(TAG, "sidecar keep from L8 (not larger) %s", sidecar);
+        ESP_LOGD(TAG, "sidecar keep from L8 (not larger) %s", sidecar);
         return true;
     }
     std::vector<uint8_t> file_bytes;
@@ -170,7 +170,7 @@ bool SaveBookCoverSidecarFromL8(const char* book_path, const RasterImage& l8) {
         ESP_LOGW(TAG, "sidecar write fail: %s", sidecar);
         return false;
     }
-    ESP_LOGI(TAG, "sidecar ok from L8 %s (%u bytes %ux%u)", sidecar,
+    ESP_LOGD(TAG, "sidecar ok from L8 %s (%u bytes %ux%u)", sidecar,
              static_cast<unsigned>(file_bytes.size()), l8.width, l8.height);
     return true;
 }
@@ -187,7 +187,7 @@ bool SaveBookCoverSidecarFromBytes(const char* book_path, const uint8_t* data, s
     if (!EncodeCoverBytesToSidecar(book_path, data, len, sidecar, sizeof(sidecar))) {
         return false;
     }
-    ESP_LOGI(TAG, "sidecar ok from bytes %s (%u in)", sidecar, static_cast<unsigned>(len));
+    ESP_LOGD(TAG, "sidecar ok from bytes %s (%u in)", sidecar, static_cast<unsigned>(len));
     return true;
 }
 
@@ -213,7 +213,7 @@ bool SaveBookCoverSidecar(const char* book_path) {
 
     // 已有权威档足够则跳过 Open，加快二次进入
     if (BookCoverSidecarAdequate(book_path, kCoverSidecarTargetW, kCoverSidecarTargetH)) {
-        ESP_LOGI(TAG, "sidecar already adequate: %s", book_path);
+        ESP_LOGD(TAG, "sidecar already adequate: %s", book_path);
         return true;
     }
 

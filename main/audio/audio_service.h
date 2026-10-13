@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <mutex>
+#include <string_view>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -102,13 +103,14 @@ public:
 
     bool PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> packet, bool wait = false);
     std::unique_ptr<AudioStreamPacket> PopPacketFromSendQueue();
-    void PlaySound(const std::string_view& sound);
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
     /**
      * Drop all PCM/Opus queues and wake waiters. Tasks stay alive.
      */
     void FlushQueues();
+    /** @brief 解析嵌入式 OGG/Opus 并入队解码播放（老化厂测音效用） */
+    void PlaySound(const std::string_view& ogg);
     void SetModelsList(srmodel_list_t* models_list);
 
 private:

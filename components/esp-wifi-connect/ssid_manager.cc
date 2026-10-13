@@ -85,7 +85,7 @@ void SsidManager::SaveToNvs() {
 
 void SsidManager::AddSsid(const std::string& ssid, const std::string& password) {
     for (auto& item : ssid_list_) {
-        ESP_LOGI(TAG, "compare [%s:%d] [%s:%d]", item.ssid.c_str(), item.ssid.size(), ssid.c_str(), ssid.size());
+        ESP_LOGD(TAG, "compare [%s:%d] [%s:%d]", item.ssid.c_str(), item.ssid.size(), ssid.c_str(), ssid.size());
         if (item.ssid == ssid) {
             ESP_LOGW(TAG, "SSID %s already exists, overwrite it", ssid.c_str());
             item.password = password;

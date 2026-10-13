@@ -4,6 +4,7 @@
 #include "application.h"
 #include "settings.h"
 #include "api_endpoints.h"
+#include "chat_cloud.h"
 
 #include <cstring>
 #include <cJSON.h>
@@ -85,16 +86,23 @@ void WebsocketProtocol::CloseAudioChannel() {
 }
 
 bool WebsocketProtocol::OpenAudioChannel() {
-    if (!api::HasHost()) {
+    if (!chat_cloud::Available()) {
         ESP_LOGI(TAG, "websocket skipped: blank cloud endpoints");
         SetError(Lang::Strings::SERVER_NOT_CONNECTED);
         return false;
     }
 
-    Settings settings("websocket", false);
-    std::string url = settings.GetString("url");
-    std::string token = settings.GetString("token");
-    int version = settings.GetInt("version");
+    Settings settings(chat_cloud::WebsocketNamespace(), false);
+    std::string url = chat_cloud::IsYunxin()
+        ? chat_cloud::YunxinWebsocketUrl(SystemInfo::GetMacAddress()) : settings.GetString("url");
+    if (url.empty()) {
+        ESP_LOGE(TAG, "Missing websocket URL in %s; OTA configuration is required",
+                 chat_cloud::WebsocketNamespace());
+        SetError(Lang::Strings::SERVER_NOT_CONNECTED);
+        return false;
+    }
+    std::string token = chat_cloud::IsYunxin() ? chat_cloud::YunxinToken() : settings.GetString("token");
+    int version = chat_cloud::IsYunxin() ? 1 : settings.GetInt("version");
     if (version != 0) {
         version_ = version;
     }

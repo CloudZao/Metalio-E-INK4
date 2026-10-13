@@ -5,39 +5,37 @@
 #include "settings_common.h"
 #include "fontpack_lvgl.h"
 
-namespace {
-
-struct ThemeOption {
-    int style;
-    const char* (*title)();
-    const char* (*current_text)();
+struct SettingsThemeOption {
+    int style; // 卡片样式枚举
+    const char* (*title)(); // 选项标题
+    const char* (*current_text)(); // 当前选中文案
 };
 
-const char* ThemeTitleWhite() { return Lang::Strings::SETTINGS_THEME_WHITE; }
-const char* ThemeTitleGray() { return Lang::Strings::SETTINGS_THEME_GRAY; }
-const char* ThemeTitleBorder() { return Lang::Strings::SETTINGS_THEME_BORDER; }
-const char* ThemeTitleSlash() { return Lang::Strings::SETTINGS_THEME_SLASH; }
-const char* ThemeCurWhite() { return Lang::Strings::SETTINGS_THEME_CURRENT_WHITE; }
-const char* ThemeCurGray() { return Lang::Strings::SETTINGS_THEME_CURRENT_GRAY; }
-const char* ThemeCurBorder() { return Lang::Strings::SETTINGS_THEME_CURRENT_BORDER; }
-const char* ThemeCurSlash() { return Lang::Strings::SETTINGS_THEME_CURRENT_SLASH; }
+static const char* ThemeTitleWhite() { return Lang::Strings::SETTINGS_THEME_WHITE; }
+static const char* ThemeTitleGray() { return Lang::Strings::SETTINGS_THEME_GRAY; }
+static const char* ThemeTitleBorder() { return Lang::Strings::SETTINGS_THEME_BORDER; }
+static const char* ThemeTitleSlash() { return Lang::Strings::SETTINGS_THEME_SLASH; }
+static const char* ThemeCurWhite() { return Lang::Strings::SETTINGS_THEME_CURRENT_WHITE; }
+static const char* ThemeCurGray() { return Lang::Strings::SETTINGS_THEME_CURRENT_GRAY; }
+static const char* ThemeCurBorder() { return Lang::Strings::SETTINGS_THEME_CURRENT_BORDER; }
+static const char* ThemeCurSlash() { return Lang::Strings::SETTINGS_THEME_CURRENT_SLASH; }
 
-constexpr ThemeOption kThemeOptions[] = {
+static constexpr SettingsThemeOption kThemeOptions[] = {
     {HomeScreen::kCardStyleWhite, ThemeTitleWhite, ThemeCurWhite},
     {HomeScreen::kCardStyleGray, ThemeTitleGray, ThemeCurGray},
     {HomeScreen::kCardStyleBorder, ThemeTitleBorder, ThemeCurBorder},
     {HomeScreen::kCardStyleSlash, ThemeTitleSlash, ThemeCurSlash},
 };
-constexpr int kThemeOptionCount = sizeof(kThemeOptions) / sizeof(kThemeOptions[0]);
+static constexpr int kThemeOptionCount = sizeof(kThemeOptions) / sizeof(kThemeOptions[0]);
 
-struct ThemeUi {
-    lv_obj_t* btns[kThemeOptionCount] = {};
-    lv_obj_t* current_lbl = nullptr;
+struct SettingsThemeUi {
+    lv_obj_t* btns[kThemeOptionCount] = {}; // 选项按钮
+    lv_obj_t* current_lbl = nullptr; // 当前主题文案
 };
 
-ThemeUi s_ui;
+static SettingsThemeUi s_ui;
 
-const char* ThemeCurrentText(int style) {
+static const char* ThemeCurrentText(int style) {
     for (int i = 0; i < kThemeOptionCount; ++i) {
         if (kThemeOptions[i].style == style) {
             return kThemeOptions[i].current_text();
@@ -46,7 +44,7 @@ const char* ThemeCurrentText(int style) {
     return kThemeOptions[0].current_text();
 }
 
-void RefreshThemeOptions() {
+static void RefreshThemeOptions() {
     const int style = HomeScreen::LoadCardStyle();
     for (int i = 0; i < kThemeOptionCount; ++i) {
         if (s_ui.btns[i] != nullptr) {
@@ -59,7 +57,7 @@ void RefreshThemeOptions() {
     }
 }
 
-void OnThemeOptionClicked(lv_event_t* e) {
+static void OnThemeOptionClicked(lv_event_t* e) {
     const int style = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
     if (HomeScreen::LoadCardStyle() == style) {
         return;
@@ -67,8 +65,6 @@ void OnThemeOptionClicked(lv_event_t* e) {
     HomeScreen::SaveCardStyle(style);
     RefreshThemeOptions();
 }
-
-}  // namespace
 
 void SettingsThemeTab_Reset() {
     s_ui = {};

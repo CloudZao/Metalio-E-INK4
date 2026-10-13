@@ -13,9 +13,8 @@
 #include <cstdio>
 #include <ctime>
 
-namespace settings_test_sensors_detail {
 
-const char* ChrgStatUi(uint8_t stat) {
+static const char* ChrgStatUi(uint8_t stat) {
     switch (stat) {
     case CX25601N_CHG_STAT_NOT:
         return Lang::Strings::SETTINGS_TEST_BATTERY_CHG_NOT;
@@ -30,7 +29,7 @@ const char* ChrgStatUi(uint8_t stat) {
     }
 }
 
-void PollBq27220() {
+static void PollBq27220() {
     auto& gauge = Bq27220Gauge::GetInstance();
     if (!gauge.IsReady()) {
         SettingsTest_SetRowValue(SettingsTest_Ui().bq27220, Lang::Strings::SETTINGS_TEST_NOT_DETECTED, true);
@@ -47,7 +46,7 @@ void PollBq27220() {
     SettingsTest_SetRowStatus(SettingsTest_Ui().bq27220, true);
 }
 
-void PollPcf8563() {
+static void PollPcf8563() {
     auto& rtc = Pcf8563::GetInstance();
     if (!rtc.IsReady()) {
         SettingsTest_SetRowValue(SettingsTest_Ui().pcf8563, Lang::Strings::SETTINGS_TEST_NOT_DETECTED, true);
@@ -67,7 +66,7 @@ void PollPcf8563() {
     SettingsTest_SetRowStatus(SettingsTest_Ui().pcf8563, true);
 }
 
-void PollCx25601() {
+static void PollCx25601() {
     if (!cx25601n_is_ready()) {
         SettingsTest_SetRowValue(SettingsTest_Ui().cx25601, Lang::Strings::SETTINGS_TEST_NOT_DETECTED, true);
         SettingsTest_SetRowStatus(SettingsTest_Ui().cx25601, false);
@@ -83,7 +82,7 @@ void PollCx25601() {
     SettingsTest_SetRowStatus(SettingsTest_Ui().cx25601, true);
 }
 
-void PollSdCard() {
+static void PollSdCard() {
     auto& sd = SdCardManager::GetInstance();
     if (!sd.IsMounted()) {
         if (!sd.Mount()) {
@@ -112,7 +111,7 @@ void PollSdCard() {
     SettingsTest_SetRowStatus(SettingsTest_Ui().sdcard, true);
 }
 
-void PollSc7a20h() {
+static void PollSc7a20h() {
     auto& ui = SettingsTest_Ui();
     if (ui.sc7a20h_captured) {
         return;
@@ -140,7 +139,7 @@ void PollSc7a20h() {
     ui.sc7a20h_captured = true;
 }
 
-void PollSensorsInternal() {
+static void PollSensorsInternal() {
     if (!SettingsTest_IsLive()) {
         return;
     }
@@ -151,29 +150,26 @@ void PollSensorsInternal() {
     PollSc7a20h();
 }
 
-void OnPollTimer(lv_timer_t* /*t*/) {
+static void OnPollTimer(lv_timer_t* /*t*/) {
     PollSensorsInternal();
     SettingsTestAudio_Poll();
 }
-void StopPollTimerInternal() {
+static void StopPollTimerInternal() {
     if (SettingsTest_Ui().poll_timer != nullptr) {
         lv_timer_delete(SettingsTest_Ui().poll_timer);
         SettingsTest_Ui().poll_timer = nullptr;
     }
 }
 
-}  // namespace settings_test_sensors_detail
-
 void SettingsTestSensors_Poll() {
-    settings_test_sensors_detail::PollSensorsInternal();
+    PollSensorsInternal();
 }
 
 void SettingsTestSensors_StopPollTimer() {
-    settings_test_sensors_detail::StopPollTimerInternal();
+    StopPollTimerInternal();
 }
 
 void SettingsTestSensors_StartPollTimer() {
     SettingsTestSensors_StopPollTimer();
-    SettingsTest_Ui().poll_timer = lv_timer_create(settings_test_sensors_detail::OnPollTimer,
-                                                   kSettingsTestPollPeriodMs, nullptr);
+    SettingsTest_Ui().poll_timer = lv_timer_create(OnPollTimer, kSettingsTestPollPeriodMs, nullptr);
 }

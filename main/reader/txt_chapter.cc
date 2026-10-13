@@ -92,40 +92,54 @@ bool IsVolumeUnit(uint32_t cp) {
     return cp == 0x5377u /*卷*/ || cp == 0x90E8u /*部*/;
 }
 
-// ^第 <ws>? <num> <ws>? <章|回|…> .*
-bool MatchDiNUnit(const uint8_t* data, size_t len) {
+// ^第 <ws>? <num> <ws>? <章|回|…> ；成功返回前缀字节长，否则 0
+size_t DiNUnitPrefixLen(const uint8_t* data, size_t len) {
     size_t i = 0;
     uint32_t cp = 0;
     size_t n = Utf8Next(data + i, len - i, &cp);
     if (n == 0 || cp != 0x7B2Cu) {  // 第
-        return false;
+        return 0;
     }
     i += n;
     i = SkipWs(data, len, i);
     const size_t num_n = ConsumeNumerals(data, len, i);
     if (num_n == 0) {
-        return false;
+        return 0;
     }
     i += num_n;
     i = SkipWs(data, len, i);
     n = Utf8Next(data + i, len - i, &cp);
-    if (n == 0) {
-        return false;
+    if (n == 0 || !(IsChapterUnit(cp) || IsVolumeUnit(cp))) {
+        return 0;
     }
-    return IsChapterUnit(cp) || IsVolumeUnit(cp);
+    return i + n;
 }
 
-// ^卷 <ws>? <num> ...
-bool MatchJuanN(const uint8_t* data, size_t len) {
+bool MatchDiNUnit(const uint8_t* data, size_t len) {
+    return DiNUnitPrefixLen(data, len) > 0;
+}
+
+// ^卷 <ws>? <num> ；成功返回前缀字节长，否则 0
+size_t JuanNPrefixLen(const uint8_t* data, size_t len) {
     size_t i = 0;
     uint32_t cp = 0;
     size_t n = Utf8Next(data + i, len - i, &cp);
     if (n == 0 || cp != 0x5377u) {  // 卷
-        return false;
+        return 0;
     }
     i += n;
     i = SkipWs(data, len, i);
-    return ConsumeNumerals(data, len, i) > 0;
+    const size_t num_n = ConsumeNumerals(data, len, i);
+    return num_n > 0 ? (i + num_n) : 0;
+}
+
+bool MatchJuanN(const uint8_t* data, size_t len) {
+    return JuanNPrefixLen(data, len) > 0;
+}
+
+bool IsNameSep(uint32_t cp) {
+    return IsWs(cp) || cp == ':' || cp == 0xFF1Au /*：*/ || cp == '-' || cp == 0x2014u ||
+           cp == 0x2013u || cp == 0x3001u /*、*/ || cp == 0xFF0Cu /*，*/ || cp == ',';
 }
 
 bool MatchAsciiKeyword(const uint8_t* data, size_t len, const char* kw) {
@@ -321,6 +335,57 @@ bool IsTxtChapterTitleLine(const char* utf8, size_t len) {
         return true;
     }
     return false;
+}
+
+bool SplitChapterHeading(const std::string& title, std::string& ordinal, std::string& name) {
+    ordinal.clear();
+    name.clear();
+    if (title.empty()) {
+        return false;
+    }
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(title.data());
+    size_t n = title.size();
+    StripWrap(data, n);
+    if (n < 1) {
+        return false;
+    }
+    size_t prefix = DiNUnitPrefixLen(data, n);
+    if (prefix == 0) {
+        prefix = JuanNPrefixLen(data, n);
+    }
+    if (prefix == 0) {
+        return false;
+    }
+    ordinal.assign(reinterpret_cast<const char*>(data), prefix);
+    size_t i = prefix;
+    while (i < n) {
+        uint32_t cp = 0;
+        const size_t cn = Utf8Next(data + i, n - i, &cp);
+        if (cn == 0 || !IsNameSep(cp)) {
+            break;
+        }
+        i += cn;
+    }
+    if (i < n) {
+        name.assign(reinterpret_cast<const char*>(data + i), n - i);
+        while (!name.empty() &&
+               (name.back() == ' ' || name.back() == '\t' || name.back() == '\r')) {
+            name.pop_back();
+        }
+    }
+    return true;
+}
+
+std::string FormatChapterHeadingDisplay(const std::string& title) {
+    std::string ordinal;
+    std::string name;
+    if (!SplitChapterHeading(title, ordinal, name)) {
+        return title;
+    }
+    if (name.empty()) {
+        return ordinal;
+    }
+    return ordinal + "\n" + name;
 }
 
 }  // namespace reader

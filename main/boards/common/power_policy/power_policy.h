@@ -12,6 +12,7 @@
 
 #include "device_state.h"
 
+#include <cstddef>
 #include <cstdint>
 
 class Board;
@@ -131,15 +132,35 @@ public:
 
     /**
      * @brief 待机浅睡累计多久自动关机（秒）
-     * @return 0=不自动关机；或 180 / 600 / 1800
+     * @return 0（永不）/ 180 / 600 / 1800 / 10800 / 21600
      */
     int GetStandbyToShutdownSec() const;
 
     /**
      * @brief 设置浅睡累计关机时长并写入 NVS
-     * @param sec 仅接受 0 / 180 / 600 / 1800，其它值归一为默认 180；0 表示待机不自动关机
+     * @param sec 仅接受 0 / 180 / 600 / 1800 / 10800 / 21600，其它值归一为默认 1800；0=永不关机（浅睡仍按 60s 切片定时醒）
      */
     void SetStandbyToShutdownSec(int sec);
+
+    /**
+     * @brief 标记待机 LP 当前阶段（无锁；供排查浅睡卡住）
+     * @param phase 字符串字面量，勿传临时缓冲
+     */
+    static void DebugSetLpPhase(const char* phase);
+
+    /**
+     * @brief 标记待机期间 iot_button 是否已 stop
+     * @param suspended true 已挂起物理键回调
+     */
+    static void DebugSetIotSuspended(bool suspended);
+
+    /**
+     * @brief 组一行待机排查快照
+     * @param buf 输出缓冲
+     * @param len 缓冲长度
+     * @return true 处于待机或异常阶段，调用方应打印
+     */
+    bool DebugFormatLpProbe(char* buf, size_t len);
 
 private:
     PowerPolicy() = default;

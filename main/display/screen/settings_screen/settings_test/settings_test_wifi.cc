@@ -1,6 +1,7 @@
+#include "settings_test_wifi_priv.h"
+#include "settings_test_wifi_ui.h"
+#include "settings_test_wifi_scan.h"
 #include "settings_test_wifi.h"
-
-#include "settings_test_common.h"
 
 #include "assets/lang_config.h"
 #include "fontpack_lvgl.h"
@@ -25,41 +26,9 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
-namespace settings_test_wifi_detail {
+uint32_t SettingsTestWifi_scan_generation = 0;
 
-constexpr const char* kTag = "SettingsTestWifi";
-constexpr const char* kLeaseOwner = "settings_test";
-constexpr int kScanTimeoutMs = 15000;
-constexpr uint16_t kMaxApRecords = 64;
-
-/**
- * 产测独立扫网会话：
- * - 不读配网/Station 缓存，自己 scan_start + 在 SCAN_DONE handler 内立刻取表
- * - 通过 WifiScanLease 让其它消费者让路（不改它们的连接/配网状态机）
- * - generation 作废离页迟到回调；lease / handler / EventGroup 全路径释放
- */
-struct ScanSession {
-    SemaphoreHandle_t mu = nullptr;
-    StaticSemaphore_t mu_buf{};
-    EventGroupHandle_t evt = nullptr;
-    esp_event_handler_instance_t handler = nullptr;
-    std::vector<wifi_ap_record_t> records;
-    bool captured = false;
-    bool lease_held = false;
-    uint32_t generation = 0;
-};
-
-struct SettingsTestScanDoneMsg {
-    bool success = false;
-    int count = 0;
-};
-
-uint32_t s_scan_generation = 0;
-
-void RebuildWifiListPage();
-void ScheduleWifiScan();
-
-void FillUiApsFromRecords(const std::vector<wifi_ap_record_t>& records) {
+void SettingsTestWifi_FillUiApsFromRecords(const std::vector<wifi_ap_record_t>& records) {
     SettingsTest_Ui().wifi_aps.clear();
     SettingsTest_Ui().wifi_page = 0;
 
@@ -96,7 +65,7 @@ void FillUiApsFromRecords(const std::vector<wifi_ap_record_t>& records) {
     }
 }
 
-void OnScanDoneCapture(void* arg, esp_event_base_t base, int32_t id, void* /*data*/) {
+void SettingsTestWifi_OnScanDoneCapture(void* arg, esp_event_base_t base, int32_t id, void* /*data*/) {
     auto* session = static_cast<ScanSession*>(arg);
     if (session == nullptr || base != WIFI_EVENT || id != WIFI_EVENT_SCAN_DONE) {
         return;
@@ -108,7 +77,7 @@ void OnScanDoneCapture(void* arg, esp_event_base_t base, int32_t id, void* /*dat
     // 只捕获本会话第一次；避免定时器并发扫的第二次 SCAN_DONE 覆盖
     if (!session->captured) {
         uint16_t ap_num = 0;
-        (void)esp_wifi_scan_get_ap_num(&ap_num);
+        esp_wifi_scan_get_ap_num(&ap_num);
         if (ap_num > kMaxApRecords) {
             ap_num = kMaxApRecords;
         }
@@ -131,7 +100,7 @@ void OnScanDoneCapture(void* arg, esp_event_base_t base, int32_t id, void* /*dat
     xSemaphoreGive(session->mu);
 }
 
-bool WifiEnsureForScan() {
+bool SettingsTestWifi_WifiEnsureForScan() {
     wifi_mode_t mode = WIFI_MODE_NULL;
     const esp_err_t mode_err = esp_wifi_get_mode(&mode);
     if (mode_err == ESP_OK && mode != WIFI_MODE_NULL) {
@@ -184,7 +153,7 @@ bool WifiEnsureForScan() {
     return true;
 }
 
-void WifiTeardownIfOwned() {
+void SettingsTestWifi_WifiTeardownIfOwned() {
     esp_wifi_scan_stop();
     if (!SettingsTest_Ui().wifi_stack_owned) {
         return;
@@ -198,7 +167,7 @@ void WifiTeardownIfOwned() {
     SettingsTest_Ui().wifi_stack_owned = false;
 }
 
-void CloseWifiPopup() {
+void SettingsTestWifi_CloseWifiPopup() {
     if (SettingsTest_Ui().wifi_mask != nullptr) {
         lv_obj_delete(SettingsTest_Ui().wifi_mask);
     }
@@ -209,7 +178,7 @@ void CloseWifiPopup() {
     SettingsTest_Ui().wifi_rescan_btn = nullptr;
 }
 
-void SetWifiRescanEnabled(bool enabled) {
+void SettingsTestWifi_SetWifiRescanEnabled(bool enabled) {
     if (SettingsTest_Ui().wifi_rescan_btn == nullptr) {
         return;
     }
@@ -222,7 +191,7 @@ void SetWifiRescanEnabled(bool enabled) {
     }
 }
 
-int WifiPageCount() {
+int SettingsTestWifi_WifiPageCount() {
     if (SettingsTest_Ui().wifi_aps.empty()) {
         return 1;
     }
@@ -230,7 +199,7 @@ int WifiPageCount() {
                             kSettingsTestWifiPageSize);
 }
 
-void RebuildWifiListPage() {
+void SettingsTestWifi_RebuildWifiListPage() {
     if (!SettingsTest_IsLive() || SettingsTest_Ui().wifi_list == nullptr) {
         return;
     }
@@ -253,7 +222,7 @@ void RebuildWifiListPage() {
         lv_label_set_text(SettingsTest_Ui().wifi_status, status);
     }
 
-    const int pages = WifiPageCount();
+    const int pages = SettingsTestWifi_WifiPageCount();
     if (SettingsTest_Ui().wifi_page < 0) {
         SettingsTest_Ui().wifi_page = 0;
     }
@@ -305,29 +274,29 @@ void RebuildWifiListPage() {
     }
 }
 
-void OnWifiClose(lv_event_t* /*e*/) {
-    CloseWifiPopup();
+void SettingsTestWifi_OnWifiClose(lv_event_t* /*e*/) {
+    SettingsTestWifi_CloseWifiPopup();
 }
 
-void OnWifiRescan(lv_event_t* /*e*/) {
-    ScheduleWifiScan();
+void SettingsTestWifi_OnWifiRescan(lv_event_t* /*e*/) {
+    SettingsTestWifi_ScheduleWifiScan();
 }
 
-void OnWifiPrev(lv_event_t* /*e*/) {
+void SettingsTestWifi_OnWifiPrev(lv_event_t* /*e*/) {
     if (SettingsTest_Ui().wifi_page > 0) {
         --SettingsTest_Ui().wifi_page;
-        RebuildWifiListPage();
+        SettingsTestWifi_RebuildWifiListPage();
     }
 }
 
-void OnWifiNext(lv_event_t* /*e*/) {
-    if (SettingsTest_Ui().wifi_page + 1 < WifiPageCount()) {
+void SettingsTestWifi_OnWifiNext(lv_event_t* /*e*/) {
+    if (SettingsTest_Ui().wifi_page + 1 < SettingsTestWifi_WifiPageCount()) {
         ++SettingsTest_Ui().wifi_page;
-        RebuildWifiListPage();
+        SettingsTestWifi_RebuildWifiListPage();
     }
 }
 
-lv_obj_t* MakePopupBtn(lv_obj_t* parent, const char* text, lv_event_cb_t cb) {
+lv_obj_t* SettingsTestWifi_MakePopupBtn(lv_obj_t* parent, const char* text, lv_event_cb_t cb) {
     lv_obj_t* btn = lv_obj_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_set_size(btn, 88, 44);
@@ -347,7 +316,7 @@ lv_obj_t* MakePopupBtn(lv_obj_t* parent, const char* text, lv_event_cb_t cb) {
     return btn;
 }
 
-void OpenWifiPopup() {
+void SettingsTestWifi_OpenWifiPopup() {
     if (SettingsTest_Ui().wifi_mask != nullptr || !SettingsTest_IsLive() ||
         SettingsTest_Ui().root_scr == nullptr) {
         return;
@@ -362,7 +331,7 @@ void OpenWifiPopup() {
     lv_obj_clear_flag(mask, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(mask, LV_OBJ_FLAG_CLICKABLE);
     HapticAttachClick(mask);
-    lv_obj_add_event_cb(mask, OnWifiClose, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(mask, SettingsTestWifi_OnWifiClose, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* card = lv_obj_create(mask);
     lv_obj_remove_style_all(card);
@@ -412,231 +381,15 @@ void OpenWifiPopup() {
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
 
-    MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_PREV, OnWifiPrev);
-    SettingsTest_Ui().wifi_rescan_btn = MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_RESCAN, OnWifiRescan);
-    MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_NEXT, OnWifiNext);
-    MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_CLOSE, OnWifiClose);
+    SettingsTestWifi_MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_PREV, SettingsTestWifi_OnWifiPrev);
+    SettingsTest_Ui().wifi_rescan_btn = SettingsTestWifi_MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_RESCAN, SettingsTestWifi_OnWifiRescan);
+    SettingsTestWifi_MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_NEXT, SettingsTestWifi_OnWifiNext);
+    SettingsTestWifi_MakePopupBtn(btn_row, Lang::Strings::SETTINGS_TEST_WIFI_CLOSE, SettingsTestWifi_OnWifiClose);
 
-    SetWifiRescanEnabled(!SettingsTest_Ui().wifi_scan_busy);
-    RebuildWifiListPage();
+    SettingsTestWifi_SetWifiRescanEnabled(!SettingsTest_Ui().wifi_scan_busy);
+    SettingsTestWifi_RebuildWifiListPage();
 }
 
-void OnWifiRowClicked(lv_event_t* /*e*/) {
-    OpenWifiPopup();
-}
-
-void AsyncWifiScanDone(void* p) {
-    auto* msg = static_cast<SettingsTestScanDoneMsg*>(p);
-    // 无论是否仍 live，都清 busy，避免离页/投递失败后卡死「扫描中」
-    SettingsTest_Ui().wifi_scan_busy = false;
-    if (!SettingsTest_IsLive()) {
-        delete msg;
-        return;
-    }
-    if (msg->success && msg->count > 0) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), Lang::Strings::SETTINGS_TEST_WIFI_FOUND_FMT, msg->count);
-        SettingsTest_SetRowValue(SettingsTest_Ui().wifi, buf, false);
-        SettingsTest_SetRowStatus(SettingsTest_Ui().wifi, true);
-    } else if (msg->success) {
-        SettingsTest_SetRowValue(SettingsTest_Ui().wifi, Lang::Strings::SETTINGS_TEST_WIFI_NONE, true);
-        SettingsTest_SetRowStatus(SettingsTest_Ui().wifi, false);
-    } else {
-        SettingsTest_SetRowValue(SettingsTest_Ui().wifi, Lang::Strings::SETTINGS_TEST_WIFI_SCAN_FAIL, true);
-        SettingsTest_SetRowStatus(SettingsTest_Ui().wifi, false);
-    }
-    SetWifiRescanEnabled(true);
-    RebuildWifiListPage();
-    delete msg;
-}
-
-void PostWifiScanDone(bool success, int count) {
-    auto* msg = new (std::nothrow) SettingsTestScanDoneMsg{success, count};
-    if (msg == nullptr) {
-        SettingsTest_Ui().wifi_scan_busy = false;
-        return;
-    }
-    if (!SettingsTest_PostLvAsync(AsyncWifiScanDone, msg)) {
-        SettingsTest_Ui().wifi_scan_busy = false;
-        delete msg;
-    }
-}
-
-void DestroyScanSession(ScanSession* session) {
-    if (session == nullptr) {
-        return;
-    }
-    if (session->handler != nullptr) {
-        esp_event_handler_instance_unregister(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, session->handler);
-        session->handler = nullptr;
-    }
-    if (session->evt != nullptr) {
-        vEventGroupDelete(session->evt);
-        session->evt = nullptr;
-    }
-    if (session->lease_held) {
-        WifiScanLease::Release();
-        session->lease_held = false;
-    }
-    session->records.clear();
-    // StaticSemaphore 随 session 释放；勿 vSemaphoreDelete
-}
-
-void WifiScanTask(void* /*arg*/) {
-    const uint32_t my_gen = s_scan_generation;
-    SettingsTest_Ui().wifi_scan_busy = true;
-
-    // 任务末尾 vTaskDelete 不跑 C++ 析构，会话必须堆分配并在删任务前 delete
-    ScanSession* session = new (std::nothrow) ScanSession();
-    if (session == nullptr) {
-        PostWifiScanDone(false, 0);
-        vTaskDelete(nullptr);
-        return;
-    }
-    session->generation = my_gen;
-    session->mu = xSemaphoreCreateMutexStatic(&session->mu_buf);
-    session->evt = xEventGroupCreate();
-
-    auto finish_fail = [&]() {
-        DestroyScanSession(session);
-        delete session;
-        session = nullptr;
-        if (my_gen == s_scan_generation) {
-            PostWifiScanDone(false, 0);
-        } else {
-            SettingsTest_Ui().wifi_scan_busy = false;
-        }
-        vTaskDelete(nullptr);
-    };
-
-    if (session->mu == nullptr || session->evt == nullptr) {
-        ESP_LOGE(kTag, "session alloc failed");
-        finish_fail();
-        return;
-    }
-
-    if (!WifiScanLease::TryAcquire(kLeaseOwner)) {
-        ESP_LOGW(kTag, "lease busy");
-        finish_fail();
-        return;
-    }
-    session->lease_held = true;
-
-    if (esp_event_handler_instance_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &OnScanDoneCapture,
-                                            session, &session->handler) != ESP_OK) {
-        ESP_LOGE(kTag, "register SCAN_DONE failed");
-        finish_fail();
-        return;
-    }
-
-    if (!SettingsTest_IsLive() || my_gen != s_scan_generation) {
-        DestroyScanSession(session);
-        delete session;
-        SettingsTest_Ui().wifi_scan_busy = false;
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    if (!WifiEnsureForScan()) {
-        finish_fail();
-        return;
-    }
-
-    (void)esp_wifi_scan_stop();
-    xEventGroupClearBits(session->evt, static_cast<EventBits_t>(kSettingsTestBitScanDone));
-    if (xSemaphoreTake(session->mu, pdMS_TO_TICKS(200)) == pdTRUE) {
-        session->captured = false;
-        session->records.clear();
-        xSemaphoreGive(session->mu);
-    }
-
-    wifi_scan_config_t cfg = {};
-    cfg.show_hidden = false;
-    cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-    const esp_err_t start_err = esp_wifi_scan_start(&cfg, false);
-    if (start_err != ESP_OK) {
-        ESP_LOGW(kTag, "scan_start: %s", esp_err_to_name(start_err));
-        finish_fail();
-        return;
-    }
-
-    const EventBits_t bits = xEventGroupWaitBits(
-        session->evt, static_cast<EventBits_t>(kSettingsTestBitScanDone), pdTRUE, pdTRUE,
-        pdMS_TO_TICKS(kScanTimeoutMs));
-
-    std::vector<wifi_ap_record_t> local_records;
-    bool ok = false;
-    if ((bits & kSettingsTestBitScanDone) &&
-        xSemaphoreTake(session->mu, pdMS_TO_TICKS(200)) == pdTRUE) {
-        ok = session->captured;
-        local_records = std::move(session->records);
-        xSemaphoreGive(session->mu);
-    } else {
-        (void)esp_wifi_scan_stop();
-        ESP_LOGW(kTag, "scan timeout or capture missed");
-    }
-
-    DestroyScanSession(session);
-    delete session;
-    session = nullptr;
-
-    if (my_gen != s_scan_generation || !SettingsTest_IsLive()) {
-        local_records.clear();
-        SettingsTest_Ui().wifi_scan_busy = false;
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    if (!ok) {
-        local_records.clear();
-        PostWifiScanDone(false, 0);
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    FillUiApsFromRecords(local_records);
-    local_records.clear();
-    PostWifiScanDone(true, static_cast<int>(SettingsTest_Ui().wifi_aps.size()));
-    vTaskDelete(nullptr);
-}
-
-void ScheduleWifiScan() {
-    if (!SettingsTest_IsLive() || SettingsTest_Ui().wifi_scan_busy) {
-        return;
-    }
-    ++s_scan_generation;
-    SettingsTest_SetRowValue(SettingsTest_Ui().wifi, Lang::Strings::SETTINGS_TEST_SCANNING, false);
-    SetWifiRescanEnabled(false);
-    RebuildWifiListPage();
-    if (xTaskCreate(WifiScanTask, "set_wifi_scan", 6144, nullptr, 5, nullptr) != pdPASS) {
-        SettingsTest_Ui().wifi_scan_busy = false;
-        SettingsTest_SetRowValue(SettingsTest_Ui().wifi, Lang::Strings::CLOUD_TASK_FAIL, true);
-        SettingsTest_SetRowStatus(SettingsTest_Ui().wifi, false);
-        SetWifiRescanEnabled(true);
-    }
-}
-
-void InvalidateInFlightScan() {
-    ++s_scan_generation;
-    (void)esp_wifi_scan_stop();
-    // 进行中的任务在 WaitBits 返回后见 generation 变化会自行 Release/清 busy
-}
-
-}  // namespace settings_test_wifi_detail
-
-void SettingsTestWifi_ScheduleScan() {
-    settings_test_wifi_detail::ScheduleWifiScan();
-}
-
-void SettingsTestWifi_ClosePopup() {
-    settings_test_wifi_detail::CloseWifiPopup();
-}
-
-void SettingsTestWifi_Teardown() {
-    settings_test_wifi_detail::InvalidateInFlightScan();
-    settings_test_wifi_detail::WifiTeardownIfOwned();
-}
-
-void SettingsTestWifi_OnRowClicked(lv_event_t* e) {
-    settings_test_wifi_detail::OnWifiRowClicked(e);
+void SettingsTestWifi_OnWifiRowClicked(lv_event_t* /*e*/) {
+    SettingsTestWifi_OpenWifiPopup();
 }

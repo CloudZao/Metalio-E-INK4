@@ -85,6 +85,42 @@ inline lv_obj_t* CreatePageTextLabel(lv_obj_t* col, const PageItem& item, lv_coo
         text_w = max_w - indent_px;
     }
 
+    // 章名：居中加粗；可含换行拆成「第N章」与章节名两行
+    if (item.chapter_title) {
+        lv_obj_t* stack = lv_obj_create(label_parent);
+        lv_obj_remove_style_all(stack);
+        lv_obj_set_width(stack, text_w);
+        lv_obj_set_height(stack, LV_SIZE_CONTENT);
+        lv_obj_set_style_layout(stack, LV_LAYOUT_NONE, 0);
+        lv_obj_clear_flag(stack, LV_OBJ_FLAG_CLICKABLE);
+        DisableObjScroll(stack);
+
+        lv_obj_t* label = lv_label_create(stack);
+        lv_label_set_text(label, item.text.c_str());
+        lv_obj_set_style_text_font(label, book_font, 0);
+        lv_obj_set_style_text_color(label, lv_color_black(), 0);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(label, text_w);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+        lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
+        DisableObjScroll(label);
+
+        lv_obj_t* bold = lv_label_create(stack);
+        lv_label_set_text(bold, item.text.c_str());
+        lv_obj_set_style_text_font(bold, book_font, 0);
+        lv_obj_set_style_text_color(bold, lv_color_black(), 0);
+        lv_obj_set_style_text_align(bold, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(bold, text_w);
+        lv_label_set_long_mode(bold, LV_LABEL_LONG_WRAP);
+        lv_obj_clear_flag(bold, LV_OBJ_FLAG_CLICKABLE);
+        DisableObjScroll(bold);
+        lv_obj_align(bold, LV_ALIGN_TOP_LEFT, 1, 0);
+
+        lv_obj_update_layout(stack);
+        lv_obj_set_height(stack, lv_obj_get_height(label));
+        return label;
+    }
+
     lv_obj_t* label = lv_label_create(label_parent);
     lv_label_set_text(label, item.text.c_str());
     lv_obj_set_style_text_font(label, book_font, 0);

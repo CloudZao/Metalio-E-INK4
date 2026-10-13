@@ -6,18 +6,21 @@
 extern "C" {
 #endif
 
-// 盖板 vk_prev / vk_next 长按连翻：按下后每 1s 连续翻 ±10 页。
+/**
+ * @brief 连翻步进回调：page_delta 为 ±N 页；返回 false 表示触边应停止
+ */
 typedef bool (*VkPageRepeatStepFn)(int page_delta);
 
-// 停止当前连翻状态。
+/** @brief 停止当前连翻状态 */
 void VkPageRepeatStop(void);
 
-// 若 key 是 vk_prev / vk_next，则启动连翻；达到边界时自动停止。
+/** @brief 若 key 是 vk_prev / vk_next 则启动连翻；触边自动停止 */
 bool VkPageRepeatTryStart(const char* key, VkPageRepeatStepFn step);
 
-// 松手时停止连翻，返回 true 表示已消费。
+/** @brief 松手时停止连翻；返回 true 表示已消费 */
 bool VkPageRepeatOnPressUp(const char* key);
 
+/** @brief 当前是否处于连翻中 */
 bool VkPageRepeatIsActive(void);
 
 #ifdef __cplusplus

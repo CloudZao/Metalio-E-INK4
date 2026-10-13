@@ -407,7 +407,7 @@ merge_firmware.sh                  # build + merge full bin
 | `ota_0` / `ota_1` | 5MB each | Dual OTA apps |
 | `resources` | 400K | Resource SPIFFS |
 | `font_data` | 5MB | UI fontpack (mmap) |
-| `coredump` | 64K | Crash dump |
+| `coredump` | 64K | Crash dump (on boot, if SD log enabled and card mounted: overwrite `metalio/e-ink/logs/metalio_coredump.elf`, then erase slot) |
 
 > `partitions/v2/` (assets layout) exists but is **not** used by the current board config. Partition table offset: `CONFIG_PARTITION_TABLE_OFFSET=0x8000`.
 
@@ -416,6 +416,10 @@ merge_firmware.sh                  # build + merge full bin
 ## 10. Cloud services and APIs
 
 Cloud hosts and HTTP paths live in `main/cloudzao_endpoints.c`. Call sites only use `main/api_endpoints.h` to build URLs. In the current open-source build, those strings are intentionally blank, so the firmware does not use a private backend by default; if you deploy your own service, fill in the real values while keeping the symbol names unchanged.
+
+Baiwen, Xiaozhi and Yunxin endpoints, app identifiers and tokens are defined in `main/cloudzao_endpoints.c`. They remain empty in this repository. Configure them locally before connecting a device; chat configuration and activation are separate from Cloudzao firmware updates.
+
+Before committing or publishing, run `python scripts/blank_cloudzao_endpoints.py`, then `python scripts/blank_cloudzao_endpoints.py --check`. The existing commit hooks, push checks and CI rules are retained.
 
 Primary voice transport remains **WebSocket / MQTT+UDP** (`docs/websocket.md`, `docs/mqtt-udp.md`). Device tools can be exposed via **MCP** (`docs/mcp-protocol.md`, `docs/mcp-usage.md`).
 
@@ -465,6 +469,7 @@ See [`main/display/screen/assistant_screen/README.md`](main/display/screen/assis
 - Formats: `.ebook` / `.epub` / `.txt`; `.txt.idx` index; side-car cover `.a2i1`
 - Fonts: `.../fonts/*.ef` (e.g. `misans_25_2.ef`)
 - Layout prefs in NVS; **no scroll** on list/body; VK / volume keys (TCA9555 **P0.7** / **P1.0**) page
+- Reader can be portrait / left-land / right-land; landscape settings, TOC, and tap-zone action picker use two columns (center rule does not run full height)
 - Boot may sync progress via `library/sync`
 - PC conversion: [`tools/ebook/README.md`](tools/ebook/README.md)
 

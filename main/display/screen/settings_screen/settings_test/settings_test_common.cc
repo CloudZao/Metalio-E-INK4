@@ -8,12 +8,8 @@
 #include <esp_log.h>
 #include <esp_lv_adapter.h>
 
-namespace {
-
-constexpr const char* TAG = "SettingsTest";
-SettingsTestUi s_ui;
-
-}  // namespace
+static constexpr const char* TAG = "SettingsTest";
+static SettingsTestUi s_ui;
 
 SettingsTestUi& SettingsTest_Ui() {
     return s_ui;

@@ -5,85 +5,109 @@
 #include <esp_log.h>
 #include <lvgl.h>
 
+#include "battery_uv_lockout.h"
 #include "cloud_screen/cloud_screen.h"
 #include "ota_upgrade_screen/ota_upgrade_screen.h"
 #include "ota_confirm_dialog/ota_confirm_dialog.h"
 #include "power_policy.h"
 #include "screen_common.h"
+#include "settings_screen/settings_log_upload.h"
 #include "settings_screen/settings_test/settings_test_aging_screen.h"
 #include "standby_screen/standby_screen.h"
 #include "vk_key_handler.h"
 
-namespace {
+static constexpr const char* TAG = "BootKey";
+static std::atomic<bool> s_boot_held{false};
+static std::atomic<bool> s_long_press_fired{false};
 
-constexpr const char* TAG = "BootKey";
-std::atomic<bool> s_boot_held{false};
-std::atomic<bool> s_long_press_fired{false};
-
-bool DispatchBootAction(BootKeyAction action, const char* kind, const char* screen) {
+static bool DispatchBootAction(BootKeyAction action, const char* kind, const char* screen) {
     if (action == nullptr) {
-        ESP_LOGI(TAG, "%s no-op (screen=%s has no handler)", kind, screen);
+        ESP_LOGD(TAG, "%s no-op (screen=%s has no handler)", kind, screen);
         return false;
     }
     if (!action()) {
-        ESP_LOGI(TAG, "%s ignored by screen=%s", kind, screen);
+        ESP_LOGD(TAG, "%s ignored by screen=%s", kind, screen);
         return false;
     }
-    ESP_LOGI(TAG, "%s handled by screen=%s", kind, screen);
+    ESP_LOGD(TAG, "%s handled by screen=%s", kind, screen);
     return true;
 }
 
-void EnterStandbyAsync(void* /*arg*/) {
+static void EnterStandbyAsync(void* /*arg*/) {
     CloudScreen::StopTransfer();
+    // 已在 LVGL 异步上下文：同步拆上传层，避免 RequestAbort 再套 lv_async 与 Show 竞态踩空
+    SettingsLogUpload_Teardown();
     StandbyScreen::Show();
 }
 
-}  // namespace
 
 void BootKey_OnPressDown() {
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "press-down blocked (ota upgrade)");
+        ESP_LOGD(TAG, "press-down blocked (ota upgrade)");
+        return;
+    }
+    if (SettingsLogUpload_IsActive()) {
+        ESP_LOGD(TAG, "press-down blocked (log upload)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
-        ESP_LOGI(TAG, "press-down blocked (aging test)");
+        ESP_LOGD(TAG, "press-down blocked (aging test)");
         return;
     }
     s_boot_held.store(true, std::memory_order_release);
     s_long_press_fired.store(false, std::memory_order_release);
     const char* screen = VkKey_ActiveScreen();
-    ESP_LOGI(TAG, "press-down on screen=%s", screen);
+    ESP_LOGD(TAG, "press-down on screen=%s", screen);
     DispatchBootAction(VkKey_GetBootPressDown(screen), "press-down", screen);
 }
 
 void BootKey_OnPressUp() {
+    if (BatteryUvLockout_IsActive()) {
+        s_boot_held.store(false, std::memory_order_release);
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
         s_boot_held.store(false, std::memory_order_release);
-        ESP_LOGI(TAG, "press-up blocked (ota upgrade)");
+        ESP_LOGD(TAG, "press-up blocked (ota upgrade)");
+        return;
+    }
+    if (SettingsLogUpload_IsActive()) {
+        s_boot_held.store(false, std::memory_order_release);
+        ESP_LOGD(TAG, "press-up blocked (log upload)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
         s_boot_held.store(false, std::memory_order_release);
-        ESP_LOGI(TAG, "press-up blocked (aging test)");
+        ESP_LOGD(TAG, "press-up blocked (aging test)");
         return;
     }
     s_boot_held.store(false, std::memory_order_release);
     const char* screen = VkKey_ActiveScreen();
-    ESP_LOGI(TAG, "press-up on screen=%s", screen);
+    ESP_LOGD(TAG, "press-up on screen=%s", screen);
     DispatchBootAction(VkKey_GetBootPressUp(screen), "press-up", screen);
 }
 
 void BootKey_OnClick() {
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "short-press blocked (ota upgrade)");
+        ESP_LOGD(TAG, "short-press blocked (ota upgrade)");
+        return;
+    }
+    if (SettingsLogUpload_IsActive()) {
+        ESP_LOGD(TAG, "short-press blocked (log upload)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
-        ESP_LOGI(TAG, "short-press blocked (aging test)");
+        ESP_LOGD(TAG, "short-press blocked (aging test)");
         return;
     }
     if (s_long_press_fired.load(std::memory_order_acquire)) {
-        ESP_LOGI(TAG, "short-press suppressed (long-press already fired this press)");
+        ESP_LOGD(TAG, "short-press suppressed (long-press already fired this press)");
         return;
     }
     const char* screen = VkKey_ActiveScreen();
@@ -93,16 +117,23 @@ void BootKey_OnClick() {
 }
 
 void BootKey_OnDoubleClick() {
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "double-click blocked (ota upgrade)");
+        ESP_LOGD(TAG, "double-click blocked (ota upgrade)");
+        return;
+    }
+    if (SettingsLogUpload_IsActive()) {
+        ESP_LOGD(TAG, "double-click blocked (log upload)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
-        ESP_LOGI(TAG, "double-click blocked (aging test)");
+        ESP_LOGD(TAG, "double-click blocked (aging test)");
         return;
     }
     if (s_long_press_fired.load(std::memory_order_acquire)) {
-        ESP_LOGI(TAG, "double-click suppressed (long-press already fired)");
+        ESP_LOGD(TAG, "double-click suppressed (long-press already fired)");
         return;
     }
     const char* screen = VkKey_ActiveScreen();
@@ -111,20 +142,29 @@ void BootKey_OnDoubleClick() {
 }
 
 void BootKey_OnLongPress() {
+    if (BatteryUvLockout_IsActive()) {
+        s_long_press_fired.store(true, std::memory_order_release);
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
         s_long_press_fired.store(true, std::memory_order_release);
-        ESP_LOGI(TAG, "long-press blocked (ota upgrade)");
+        ESP_LOGD(TAG, "long-press blocked (ota upgrade)");
+        return;
+    }
+    if (SettingsLogUpload_IsActive()) {
+        s_long_press_fired.store(true, std::memory_order_release);
+        ESP_LOGD(TAG, "long-press blocked (log upload)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
         s_long_press_fired.store(true, std::memory_order_release);
-        ESP_LOGI(TAG, "long-press blocked (aging test)");
+        ESP_LOGD(TAG, "long-press blocked (aging test)");
         return;
     }
     s_long_press_fired.store(true, std::memory_order_release);
     if (StandbyScreen::IsActive()) {
         if (StandbyScreen::HandleBootLongPress()) {
-            ESP_LOGI(TAG, "long-press handled by standby overlay");
+            ESP_LOGD(TAG, "long-press handled by standby overlay");
             return;
         }
     }
@@ -134,12 +174,15 @@ void BootKey_OnLongPress() {
 }
 
 void PowerKey_OnClick() {
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "power short blocked (ota upgrade)");
+        ESP_LOGD(TAG, "power short blocked (ota upgrade)");
         return;
     }
     if (SettingsTestAgingScreen::IsActive()) {
-        ESP_LOGI(TAG, "power short blocked (aging test)");
+        ESP_LOGD(TAG, "power short blocked (aging test)");
         return;
     }
     if (StandbyScreen::IsActive()) {
@@ -149,16 +192,20 @@ void PowerKey_OnClick() {
     }
     ESP_LOGI(TAG, "power short -> standby");
     PowerPolicy::GetInstance().PreparePowerKeyStandby();
-    // 紧急投递：勿经 MainEventLoop（百问 EnsureAssistantNetworkReady 可占死主循环）
-    if (!ScreenLvAsyncUrgent(EnterStandbyAsync)) {
-        ESP_LOGW(TAG, "power short: ScreenLvAsyncUrgent failed, fallback Schedule");
-        ScreenLvAsync(EnterStandbyAsync);
+    // 经 MainEventLoop 排队再无限等 LVGL 锁。勿走 ScreenLvAsyncUrgent(lock 50ms)：
+    // 激活刷验证码/墨水局刷常远超 50ms，必失败并打 esp_lv_adapter ERROR；
+    // 百问占主循环时 EnsureAssistantNetworkReady 间隙会 DrainScheduledTasks。
+    if (!ScreenLvAsync(EnterStandbyAsync)) {
+        ESP_LOGW(TAG, "power short: ScreenLvAsync failed");
     }
 }
 
 void PowerKey_OnLongPress() {
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "power long blocked (ota upgrade)");
+        ESP_LOGD(TAG, "power long blocked (ota upgrade)");
         return;
     }
     // 老化测试保留长按关机，便于产测救砖
@@ -166,6 +213,7 @@ void PowerKey_OnLongPress() {
         ESP_LOGW(TAG, "power long in standby (unexpected iot path)");
         return;
     }
+    SettingsLogUpload_RequestAbort("power_off");
     ESP_LOGI(TAG, "power long -> RequestPowerOff");
     PowerPolicy::GetInstance().RequestPowerOff();
 }

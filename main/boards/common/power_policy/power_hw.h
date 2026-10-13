@@ -21,7 +21,7 @@ esp_err_t power_hw_pa_set(bool on);
 
 /**
  * @brief 外设总电源轨 MAIN_PWR（与保网停/启同生命周期）
- * @param on true 上电；false 掉电（AppIdle/待机 Overlay 后）
+ * @param on true 上电；false 掉电（待机 Overlay 后）
  * @note 幂等；false→true 时 settle 后重发蓝牙模式1，并在 4G 模式下异步重建 NT26。
  *       掉电前会先 Stop 4G 模组。勿用 ESP_ERROR_CHECK 中断策略任务。
  * @return ESP_OK / ESP_ERR_INVALID_STATE（IO 未就绪）
@@ -30,8 +30,14 @@ esp_err_t power_hw_main_rail_set(bool on);
 
 /**
  * @brief MAIN_PWR 是否处于策略认定的上电态
+ * @note 未与 power_hw 对齐过（known=false）时返回 false，勿等同于硬件已掉电
  */
 bool power_hw_main_rail_is_on(void);
+
+/**
+ * @brief 策略是否已记录过 MAIN_PWR 状态（开机 IO 上电后应已对齐）
+ */
+bool power_hw_main_rail_is_known(void);
 
 /**
  * @brief 待机浅睡：暂停射频（保留 netif）
@@ -59,12 +65,20 @@ esp_err_t power_hw_cpu_freq_set(int mhz);
 void power_hw_begin_power_off(void);
 
 /**
- * @brief 阻塞浅睡一次；BOOT/POWER 低电平唤醒，max_sleep_us>0 时兼定时唤醒
+ * @brief 阻塞浅睡一次；仅 POWER 低电平唤醒，max_sleep_us>0 时兼定时唤醒
  * @param max_sleep_us 最长睡眠微秒；0 表示仅 GPIO 唤醒
  * @note 入睡前对 EPD_RST 做 gpio_hold，减轻浅睡脚漂导致画面发灰
+ * @note BOOT 不参与浅睡唤醒，避免短触误亮屏；返回后可 power_hw_gpio_wake_latch_get()
  * @return ESP_OK 或唤醒相关错误
  */
 esp_err_t power_hw_light_sleep_once(uint64_t max_sleep_us);
+
+/**
+ * @brief 取最近一次浅睡返回瞬间的 POWER 低电平锁存
+ * @param boot_low 非空则写 false（BOOT 非唤醒源，保留形参兼容）
+ * @param power_low 非空则写 POWER 是否为低
+ */
+void power_hw_gpio_wake_latch_get(bool *boot_low, bool *power_low);
 
 #ifdef __cplusplus
 }

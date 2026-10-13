@@ -30,21 +30,21 @@ constexpr int kSettingsTestWifiPageSize = 4;
 constexpr lv_coord_t kSettingsTestWifiPopupH = 380;
 
 struct SettingsTestRow {
-    lv_obj_t* row = nullptr;
-    lv_obj_t* icon = nullptr;
-    lv_obj_t* value = nullptr;
+    lv_obj_t* row = nullptr; // 行容器
+    lv_obj_t* icon = nullptr; // 通过/失败图标
+    lv_obj_t* value = nullptr; // 右侧状态文案
 };
 
 struct SettingsTestApItem {
-    std::string ssid;
-    int8_t rssi = -127;
-    wifi_auth_mode_t authmode = WIFI_AUTH_OPEN;
+    std::string ssid; // AP 名称
+    int8_t rssi = -127; // 信号强度
+    wifi_auth_mode_t authmode = WIFI_AUTH_OPEN; // 认证模式
 };
 
 enum class SettingsTestCellState {
-    Idle,
-    TestingInternal,
-    TestingExternal,
+    Idle, // 空闲
+    TestingInternal, // 测内置卡
+    TestingExternal, // 测外置卡
 };
 
 struct SettingsTestUi {
@@ -89,24 +89,31 @@ struct SettingsTestUi {
     uint32_t last_cfun_ms = 0;
 };
 
+/** @brief 无论是否仍 live，都清 busy，避免离页/投递失败后卡死「扫描中」 */
 SettingsTestUi& SettingsTest_Ui();
 
-// 页内后台任务 / lv_async_call 回写 UI 前必须检查；离页时先 BeginShutdown 再 Teardown。
+/** @brief 页内后台任务 / lv_async_call 回写 UI 前必须检查；离页时先 BeginShutdown 再 Teardown */
 bool SettingsTest_IsLive();
+/** @brief 开始离页关停：清 alive/active，阻止后续回写 */
 void SettingsTest_BeginShutdown();
 
 /**
- * 非 LVGL 线程投递 UI：先持 esp_lv_adapter_lock 再 lv_async_call。
- * 禁止裸 lv_async_call（与 lv_timer_handler 竞态会搞坏定时器链表 → Cache/MMU 崩溃）。
- * @return 是否已入队；失败时调用方须释放 user_data（若堆分配）
+ * @brief 非 LVGL 线程投递 UI：先持 esp_lv_adapter_lock 再 lv_async_call
+ * @note 禁止裸 lv_async_call；失败时调用方须释放 user_data（若堆分配）
  */
 bool SettingsTest_PostLvAsync(void (*cb)(void*), void* user_data = nullptr);
 
+/** @brief 设置行通过/失败图标 */
 void SettingsTest_SetRowStatus(SettingsTestRow& row, bool pass);
+/** @brief 设置行右侧文案 */
 void SettingsTest_SetRowValue(SettingsTestRow& row, const char* text, bool error);
+/** @brief 创建标准测试行（标题 + 图标 + 值） */
 SettingsTestRow SettingsTest_CreateRow(lv_obj_t* parent, const char* title,
                                        lv_event_cb_t row_click_cb);
 
+/** @brief 取 DualNetworkBoard（非双网板返回 nullptr） */
 DualNetworkBoard* SettingsTest_GetDualBoard();
+/** @brief 取当前 Nt26Board（经双网板解引用） */
 Nt26Board* SettingsTest_GetNt26Board();
+/** @brief 当前是否为蜂窝（4G）网络模式 */
 bool SettingsTest_IsCellNetwork();

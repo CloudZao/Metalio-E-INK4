@@ -68,7 +68,7 @@ static bool path_for_seq(char *out, size_t out_sz, uint32_t seq, bool tmp)
     return join_base(out, out_sz, name);
 }
 
-/** mNNNNN.json → seq; 0 if not a record. */
+// mNNNNN.json → seq; 0 if not a record.
 static uint32_t seq_from_name(const char *name)
 {
     if (!name || name[0] != 'm') {
@@ -119,9 +119,9 @@ static void wipe_all_unlocked(void)
     closedir(d);
     s_next_seq = 1;
     if (n > 0) {
-        ESP_LOGI(TAG, "wiped %d file(s) under %s", n, ASSISTANT_CHAT_STORE_BASE_PATH);
+        ESP_LOGD(TAG, "wiped %d file(s) under %s", n, ASSISTANT_CHAT_STORE_BASE_PATH);
     } else {
-        ESP_LOGI(TAG, "wipe: dir empty %s", ASSISTANT_CHAT_STORE_BASE_PATH);
+        ESP_LOGD(TAG, "wipe: dir empty %s", ASSISTANT_CHAT_STORE_BASE_PATH);
     }
 }
 
@@ -187,7 +187,7 @@ static bool drop_oldest_unlocked(void)
         ESP_LOGW(TAG, "drop oldest seq=%lu failed errno=%d", (unsigned long)sc.min_seq, errno);
         return false;
     }
-    ESP_LOGI(TAG, "drop oldest seq=%lu (files=%d used=%u)", (unsigned long)sc.min_seq, sc.files - 1,
+    ESP_LOGD(TAG, "drop oldest seq=%lu (files=%d used=%u)", (unsigned long)sc.min_seq, sc.files - 1,
              (unsigned)(sc.bytes));
     return true;
 }
@@ -202,7 +202,7 @@ static void make_room_unlocked(size_t incoming)
         if (!too_many && !too_big) {
             return;
         }
-        ESP_LOGI(TAG, "budget files=%d used=%u incoming=%u — drop oldest", sc.files,
+        ESP_LOGD(TAG, "budget files=%d used=%u incoming=%u — drop oldest", sc.files,
                  (unsigned)sc.bytes, (unsigned)incoming);
         if (!drop_oldest_unlocked()) {
             return;
@@ -283,7 +283,7 @@ esp_err_t assistant_chat_store_init(void)
     wipe_all_unlocked();
     s_next_seq = 1;
     s_ready = true;
-    ESP_LOGI(TAG, "ready path=%s cap: %d files / %uB/file / %uB total (boot wipe)",
+    ESP_LOGD(TAG, "ready path=%s cap: %d files / %uB/file / %uB total (boot wipe)",
              ASSISTANT_CHAT_STORE_BASE_PATH, CHAT_MAX_FILES, (unsigned)CHAT_MAX_RECORD,
              (unsigned)CHAT_MAX_TOTAL_BYTES);
     ret = ESP_OK;
@@ -343,7 +343,7 @@ esp_err_t assistant_chat_store_append(const char *json, size_t len)
             s_next_seq = seq + 1;
             ScanOut sc{};
             scan_unlocked(&sc);
-            ESP_LOGI(TAG, "APPEND seq=%lu len=%u files=%d used=%u", (unsigned long)seq,
+            ESP_LOGD(TAG, "APPEND seq=%lu len=%u files=%d used=%u", (unsigned long)seq,
                      (unsigned)len, sc.files, (unsigned)sc.bytes);
         } else {
             ESP_LOGW(TAG, "append write fail seq=%lu len=%u", (unsigned long)seq, (unsigned)len);
@@ -392,7 +392,7 @@ esp_err_t assistant_chat_store_for_each(assistant_chat_store_visit_fn fn, void *
         int n = 0;
         DIR *d = opendir(ASSISTANT_CHAT_STORE_BASE_PATH);
         if (!d) {
-            ESP_LOGI(TAG, "for_each: no dir");
+            ESP_LOGD(TAG, "for_each: no dir");
             goto out;
         }
         struct dirent *e;
@@ -417,7 +417,7 @@ esp_err_t assistant_chat_store_for_each(assistant_chat_store_visit_fn fn, void *
             seqs[j] = key;
         }
 
-        ESP_LOGI(TAG, "LOAD begin records=%d", n);
+        ESP_LOGD(TAG, "LOAD begin records=%d", n);
         int ok_n = 0;
         int skip_n = 0;
         for (int i = 0; i < n; ++i) {
@@ -472,7 +472,7 @@ esp_err_t assistant_chat_store_for_each(assistant_chat_store_visit_fn fn, void *
                 break;
             }
         }
-        ESP_LOGI(TAG, "LOAD done ok=%d skip=%d", ok_n, skip_n);
+        ESP_LOGD(TAG, "LOAD done ok=%d skip=%d", ok_n, skip_n);
         if (n > 0) {
             s_next_seq = seqs[n - 1] + 1;
         }

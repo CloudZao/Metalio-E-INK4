@@ -205,7 +205,7 @@ FontpackLvFont* FindOrCreate(uint16_t size, uint16_t bpp) {
     slot->lv.user_data = nullptr;
     EstimateMetrics(slot);
     slot->inited = true;
-    ESP_LOGI(TAG, "lv_font size=%u bpp=%u line_h=%u base=%d", size, bpp, slot->lv.line_height,
+    ESP_LOGD(TAG, "lv_font size=%u bpp=%u line_h=%u base=%d", size, bpp, slot->lv.line_height,
              static_cast<int>(slot->lv.base_line));
     return slot;
 }
@@ -277,7 +277,7 @@ bool fontpack_lv_ensure_ready(void) {
     if (!s_flash_ok) {
         ESP_LOGW(TAG, "font_loader_init_flash failed: %d", job.err);
     } else {
-        ESP_LOGI(TAG, "fontpack ready items=%lu",
+        ESP_LOGD(TAG, "fontpack ready items=%lu",
                  static_cast<unsigned long>(font_loader_item_count()));
     }
     xSemaphoreGive(s_lock);
@@ -320,7 +320,7 @@ const lv_font_t* fontpack_lv_font_ui(void) {
     if (s_ui == nullptr) {
         ESP_LOGE(TAG, "fontpack UI 25@2 unavailable");
     } else {
-        ESP_LOGI(TAG, "UI default font size=25 bpp=2");
+        ESP_LOGD(TAG, "UI default font size=25 bpp=2");
     }
     return s_ui;
 }

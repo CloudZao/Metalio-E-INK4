@@ -11,45 +11,44 @@
 
 #include <esp_log.h>
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestBat";
-constexpr const char* kScreenId = "settings_test_battery";
-constexpr uint32_t kPollPeriodMs = 1000;
-constexpr lv_coord_t kRowH = 48;
-constexpr lv_coord_t kTitleW = 168;
+static constexpr const char* TAG = "SettingsTestBat";
+static constexpr const char* kScreenId = "settings_test_battery";
+static constexpr uint32_t kPollPeriodMs = 1000;
+static constexpr lv_coord_t kRowH = 48;
+static constexpr lv_coord_t kTitleW = 168;
 
 // 与 bq27220_gauge.cc 电压→SOC 曲线一致，用于显示瞬时电量（未平滑）。
-constexpr float kBatteryEmptyV = 3.3f;
-constexpr float kBatteryFullV = 4.28f; // 显示 100%；充电截止仍为 4350
+static constexpr float kBatteryEmptyV = 3.3f;
+static constexpr float kBatteryFullV = 4.33f; // 显示 100%；充电恒压目标见 CX25601N VREG（默认 4400mV）
 
-struct BatRow {
+struct SettingsTestBatRow {
     lv_obj_t* value = nullptr;
 };
 
-lv_obj_t* s_scr = nullptr;
-lv_timer_t* s_timer = nullptr;
-bool s_alive = false;
+static lv_obj_t* s_scr = nullptr;
+static lv_timer_t* s_timer = nullptr;
+static bool s_alive = false;
 
-BatRow s_gauge;
-BatRow s_soc;
-BatRow s_soc_raw;
-BatRow s_volt;
-BatRow s_volt_range;
-BatRow s_curr;
-BatRow s_gauge_chg;
-BatRow s_vbus;
-BatRow s_chrg;
-BatRow s_chg_en;
-BatRow s_ichg;
-BatRow s_vreg;
-BatRow s_mismatch;
+static SettingsTestBatRow s_gauge;
+static SettingsTestBatRow s_soc;
+static SettingsTestBatRow s_soc_raw;
+static SettingsTestBatRow s_volt;
+static SettingsTestBatRow s_volt_range;
+static SettingsTestBatRow s_curr;
+static SettingsTestBatRow s_gauge_chg;
+static SettingsTestBatRow s_vbus;
+static SettingsTestBatRow s_chrg;
+static SettingsTestBatRow s_chg_en;
+static SettingsTestBatRow s_ichg;
+static SettingsTestBatRow s_vreg;
+static SettingsTestBatRow s_mismatch;
 
-bool s_have_volt = false;
-uint16_t s_volt_min = 0;
-uint16_t s_volt_max = 0;
+static bool s_have_volt = false;
+static uint16_t s_volt_min = 0;
+static uint16_t s_volt_max = 0;
 
-const char* ChrgStatUi(uint8_t stat) {
+static const char* ChrgStatUi(uint8_t stat) {
     switch (stat) {
     case CX25601N_CHG_STAT_NOT:
         return Lang::Strings::SETTINGS_TEST_BATTERY_CHG_NOT;
@@ -64,7 +63,7 @@ const char* ChrgStatUi(uint8_t stat) {
     }
 }
 
-const char* VbusStatUi(uint8_t stat) {
+static const char* VbusStatUi(uint8_t stat) {
     switch (stat) {
     case 0:
         return Lang::Strings::SETTINGS_TEST_BATTERY_VBUS_NONE;
@@ -85,15 +84,15 @@ const char* VbusStatUi(uint8_t stat) {
     }
 }
 
-void SetValue(BatRow& row, const char* text) {
+static void SetValue(SettingsTestBatRow& row, const char* text) {
     if (!s_alive || row.value == nullptr || !lv_obj_is_valid(row.value)) {
         return;
     }
     lv_label_set_text(row.value, text != nullptr ? text : "--");
 }
 
-BatRow CreateRow(lv_obj_t* parent, const char* title) {
-    BatRow out;
+SettingsTestBatRow CreateRow(lv_obj_t* parent, const char* title) {
+    SettingsTestBatRow out;
 
     lv_obj_t* row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
@@ -132,7 +131,7 @@ BatRow CreateRow(lv_obj_t* parent, const char* title) {
     return out;
 }
 
-int VoltageToRawPct(uint16_t mv) {
+static int VoltageToRawPct(uint16_t mv) {
     const float bat_v = static_cast<float>(mv) / 1000.0f;
     float raw_pct;
     if (bat_v >= kBatteryFullV) {
@@ -152,7 +151,7 @@ int VoltageToRawPct(uint16_t mv) {
     return pct;
 }
 
-void TrackVoltage(uint16_t mv) {
+static void TrackVoltage(uint16_t mv) {
     if (!s_have_volt) {
         s_volt_min = mv;
         s_volt_max = mv;
@@ -167,7 +166,7 @@ void TrackVoltage(uint16_t mv) {
     }
 }
 
-void Poll() {
+static void Poll() {
     if (!s_alive) {
         return;
     }
@@ -332,18 +331,38 @@ void Poll() {
     }
 }
 
-void OnPollTimer(lv_timer_t* /*t*/) {
+static void OnPollTimer(lv_timer_t* /*t*/) {
     Poll();
 }
 
-void StopTimer() {
+static void StopTimer() {
     if (s_timer != nullptr) {
         lv_timer_delete(s_timer);
         s_timer = nullptr;
     }
 }
 
-void OnDeleted(lv_event_t* e) {
+static bool s_paused_for_standby = false;
+
+void SettingsTestBatteryScreen_PauseForStandby() {
+    if (s_paused_for_standby) {
+        return;
+    }
+    s_paused_for_standby = true;
+    StopTimer();
+}
+
+void SettingsTestBatteryScreen_ResumeFromStandby() {
+    if (!s_paused_for_standby) {
+        return;
+    }
+    s_paused_for_standby = false;
+    if (s_alive && s_scr != nullptr && s_timer == nullptr) {
+        s_timer = lv_timer_create(OnPollTimer, kPollPeriodMs, nullptr);
+    }
+}
+
+static void OnDeleted(lv_event_t* e) {
     if (lv_event_get_target(e) != s_scr) {
         return;
     }
@@ -369,7 +388,6 @@ void OnDeleted(lv_event_t* e) {
     ESP_LOGI(TAG, "battery test screen deleted");
 }
 
-}  // namespace
 
 lv_obj_t* SettingsTestBatteryScreen::Create() {
     ESP_LOGI(TAG, "create battery test screen");

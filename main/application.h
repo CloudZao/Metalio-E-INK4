@@ -51,7 +51,7 @@ public:
     // 仅在主循环任务内调用：清空已排队的 MainEventLoop 任务，避免占死主循环。
     void DrainScheduledTasks();
     void SetDeviceState(DeviceState state);
-    void Alert(const char* status, const char* message, const char* emotion = "", const std::string_view& sound = "");
+    void Alert(const char* status, const char* message, const char* emotion = "");
     void DismissAlert();
     void AbortSpeaking(AbortReason reason);
     // 百问 AI BOOT 页内分工：StartListening/StopListening/AbortSpeakingToIdle。
@@ -59,6 +59,8 @@ public:
     void StopListening();
     void AbortSpeakingToIdle();
     void Reboot();
+    // Main task only: persist the selected cloud's local TTS preference and stop queued speech when muted.
+    void SetLocalChatTtsEnabled(bool enabled);
     void WakeWordInvoke(const std::string& wake_word);
     bool UpgradeFirmware(Ota& ota, const std::string& url = "");
     bool UpgradeFirmwareUrl(const std::string& url, const std::string& current_version,
@@ -67,7 +69,6 @@ public:
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
-    void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
 
     // 屏级语音会话：进页激活，离页关闭音频与协议，归还任务栈占用。
@@ -86,6 +87,14 @@ public:
     void ResumeActivationAfterStandby();
     // 仍有未绑定验证码时，Idle 顶栏显示验证码而非时钟。
     bool HasPendingActivationCode() const { return !activation_code_.empty(); }
+
+    /**
+     * @brief 暂停激活轮询（日志上传等短时占网）；仅 Activating 态生效
+     * @note 与 ResumeActivationPolling 成对；暂停期间不发起 Activate/CheckVersion HTTP
+     */
+    void PauseActivationPolling();
+    /** @brief 恢复激活轮询；若仍在 Activating 则 kick 继续 */
+    void ResumeActivationPolling();
 
 private:
     Application();
@@ -108,6 +117,8 @@ private:
     bool audio_running_ = false;
     bool voice_models_ready_ = false;
     bool protocol_ready_ = false;
+    bool chat_config_loading_ = false;
+    bool chat_activation_pending_ = false;
     bool xiaozhi_voice_active_ = false;
     bool aborted_ = false;
     std::atomic<bool> boot_ready_{false}; // Start() 跑完后置 true
@@ -118,11 +129,14 @@ private:
     std::string activation_code_;
     std::string activation_message_;
     std::atomic<bool> activation_kick_{false};
+    std::atomic<bool> activation_paused_{false}; // 日志上传等：挡 Activate/CheckVersion
     TaskHandle_t check_new_version_task_handle_ = nullptr;
     TaskHandle_t main_event_loop_task_handle_ = nullptr;
 
     void OnWakeWordDetected();
     void CheckNewVersion(Ota& ota);
+    /** @brief 开机检测 SD 根目录固件并优先升级；成功则重启，取消/失败返回 false */
+    bool TrySdCardFirmwareUpgrade();
     void CheckAssetsVersion();
     void ShowActivationCode(const std::string& code, const std::string& message);
     void SetListeningMode(ListeningMode mode);
@@ -130,12 +144,14 @@ private:
     bool EnterContinuousListening();
     // Idle 状态栏：允许时钟页面（含百问）刷 HH:MM；固定文案页改用 GetIdleStatusFixedText。
     void ApplyIdleStatusBar();
-    // 可中断延迟；Idle 时返回 false，activation_kick 时返回 true。
+    // 可中断延迟；Idle 时返回 false，activation_kick 时返回 true；paused 时原地等待。
     bool DelayMsInterruptible(int ms);
+    /** @brief Activating 且 paused 时阻塞等待恢复（或变 Idle） */
+    void WaitWhileActivationPaused();
 
-    bool ShouldAllowBootAudio() const;
     void EnsureVoiceModelsReady();
     void EnsureProtocolReady();
+    bool EnsureChatConfiguration();
     void TeardownProtocol();
     // 开机完成后：若仍在百问页，则兑现挂起的进页/聆听意图。
     void FlushPendingXiaozhiVoice();

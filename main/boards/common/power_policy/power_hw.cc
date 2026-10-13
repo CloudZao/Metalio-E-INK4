@@ -1,4 +1,5 @@
 #include "power_hw.h"
+#include "power_policy.h"
 
 #include "IOExpander.hpp"
 #include "application.h"
@@ -10,12 +11,14 @@
 #include "dual_network_board.h"
 #include "nt26_board.h"
 #include "board.h"
+#include "cx25601n.h"
 
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <esp_log.h>
 #include <esp_pm.h>
 #include <esp_sleep.h>
+#include <esp_timer.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -33,6 +36,8 @@ static constexpr uint32_t kMainRailBtTaskStack = 3072;
 static bool s_main_rail_known = false;
 static bool s_main_rail_on = false;
 static std::atomic<bool> s_main_rail_bt_reinit_busy{false};
+static bool s_gpio_wake_boot_low = false;
+static bool s_gpio_wake_power_low = false;
 
 /** 仅 4G 模式返回 Nt26Board；WiFi 模式 / 非双网板为 nullptr */
 static Nt26Board* GetCellularBoardOrNull()
@@ -149,7 +154,7 @@ static void EpdPinsParkBeforePowerOff(void)
     };
     gpio_config(&busy_cfg);
 
-    ESP_LOGI(TAG, "EPD pins park: MOSI/SCLK/CS/DC=L BUSY=HiZ RST untouched");
+    ESP_LOGD(TAG, "EPD pins park: MOSI/SCLK/CS/DC=L BUSY=HiZ RST untouched");
 }
 
 esp_err_t power_hw_pa_set(bool on)
@@ -176,6 +181,11 @@ esp_err_t power_hw_pa_set(bool on)
 bool power_hw_main_rail_is_on(void)
 {
     return s_main_rail_known && s_main_rail_on;
+}
+
+bool power_hw_main_rail_is_known(void)
+{
+    return s_main_rail_known;
 }
 
 static esp_err_t MainRailSetImpl(bool on, bool reinit_peripherals_on_rise)
@@ -212,7 +222,7 @@ static esp_err_t MainRailSetImpl(bool on, bool reinit_peripherals_on_rise)
 
     s_main_rail_known = true;
     s_main_rail_on = on;
-    ESP_LOGI(TAG, "MAIN_PWR %s", on ? "on" : "off");
+    ESP_LOGD(TAG, "MAIN_PWR %s", on ? "on" : "off");
 
     // 掉电后模组状态丢失；上升沿异步恢复 BT 模式1 + 4G Start（不阻塞 Flush/定时器）
     // reinit_peripherals_on_rise=false：关机 hold 上电，勿重拉模组
@@ -256,7 +266,7 @@ esp_err_t power_hw_wifi_stop(void)
     }
     // 待机浅睡只 pause，勿 Stop/deinit/destroy netif（反复 BOOT 会 netif already added）
     WifiStation::GetInstance().PauseForLp();
-    ESP_LOGI(TAG, "WiFi STA paused for LP");
+    ESP_LOGD(TAG, "WiFi STA paused for LP");
     NotifyNetworkIconChanged();
     return ESP_OK;
 }
@@ -287,7 +297,7 @@ esp_err_t power_hw_wifi_start(void)
     if (sta.IsLpPaused()) {
         esp_err_t err = sta.ResumeFromLp();
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "WiFi STA resumed from LP");
+            ESP_LOGD(TAG, "WiFi STA resumed from LP");
             NotifyNetworkIconChanged();
             return ESP_OK;
         }
@@ -320,7 +330,7 @@ esp_err_t power_hw_cpu_freq_set(int mhz)
         .light_sleep_enable = false,
     };
     esp_err_t err = esp_pm_configure(&cfg);
-    ESP_LOGI(TAG, "cpu %dMHz (no auto_ls): %s", mhz, esp_err_to_name(err));
+    ESP_LOGD(TAG, "cpu %dMHz (no auto_ls): %s", mhz, esp_err_to_name(err));
     return err;
     #else
     (void)mhz;
@@ -344,7 +354,7 @@ static esp_err_t PrepareForPowerOff()
                  esp_err_to_name(err_sock), esp_err_to_name(err_main));
         return (err_sock != ESP_OK) ? err_sock : err_main;
     }
-    ESP_LOGI(TAG, "power-off prep: PA off, MAIN/SCREEN rails held");
+    ESP_LOGD(TAG, "power-off prep: PA off, MAIN/SCREEN rails held");
     return ESP_OK;
 }
 
@@ -393,12 +403,9 @@ esp_err_t power_hw_light_sleep_once(uint64_t max_sleep_us)
 {
     #if CONFIG_PM_ENABLE
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    esp_err_t err = gpio_wakeup_enable(BOOT_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "BOOT wake cfg failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    err = gpio_wakeup_enable(POWER_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
+    // 仅 POWER 作浅睡 GPIO 唤醒；BOOT 短触不得叫醒（否则脚松开无法区分会误 dismiss）
+    gpio_wakeup_disable(BOOT_BUTTON_GPIO);
+    esp_err_t err = gpio_wakeup_enable(POWER_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "POWER wake cfg failed: %s", esp_err_to_name(err));
         return err;
@@ -416,23 +423,44 @@ esp_err_t power_hw_light_sleep_once(uint64_t max_sleep_us)
         }
     }
 
-    ESP_LOGW(TAG, "blocking light sleep; BOOT GPIO%d + POWER GPIO%d%s",
-             static_cast<int>(BOOT_BUTTON_GPIO), static_cast<int>(POWER_BUTTON_GPIO),
-             max_sleep_us > 0 ? " + timer" : "");
+    ESP_LOGD(TAG, "blocking light sleep; POWER GPIO%d%s",
+             static_cast<int>(POWER_BUTTON_GPIO), max_sleep_us > 0 ? " + timer" : "");
     // 浅睡后 UART 停：尽量刷出「即将入睡」日志
     fflush(stdout);
     #if defined(CONFIG_ESP_CONSOLE_UART_NUM) && (CONFIG_ESP_CONSOLE_UART_NUM >= 0)
+    PowerPolicy::DebugSetLpPhase("uart_wait");
     uart_wait_tx_idle_polling(static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM));
     #endif
     EpdRstHoldForLightSleep();
+    PowerPolicy::DebugSetLpPhase("in_sleep");
+    cx25601n_vreg_suspend_for_sleep();
     err = esp_light_sleep_start();
+    cx25601n_vreg_resume_after_sleep();
+    PowerPolicy::DebugSetLpPhase("sleep_ret");
+    // 醒瞬间先锁存 POWER 电平，再打日志（UART 刷写会拖过短按）
+    s_gpio_wake_boot_low = false;
+    s_gpio_wake_power_low = (gpio_get_level(POWER_BUTTON_GPIO) == 0);
     EpdRstReleaseAfterLightSleep();
     const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    ESP_LOGW(TAG, "woke from light sleep: %s cause=%d", esp_err_to_name(err), (int)cause);
+    ESP_LOGD(TAG, "woke from light sleep: %s cause=%d power=%d wake_us=%llu",
+             esp_err_to_name(err), (int)cause, s_gpio_wake_power_low ? 1 : 0,
+             static_cast<unsigned long long>(esp_timer_get_time()));
     return err;
     #else
     (void)max_sleep_us;
+    s_gpio_wake_boot_low = false;
+    s_gpio_wake_power_low = false;
     ESP_LOGW(TAG, "light sleep skipped (CONFIG_PM_ENABLE off)");
     return ESP_ERR_NOT_SUPPORTED;
     #endif
+}
+
+void power_hw_gpio_wake_latch_get(bool *boot_low, bool *power_low)
+{
+    if (boot_low != nullptr) {
+        *boot_low = s_gpio_wake_boot_low;
+    }
+    if (power_low != nullptr) {
+        *power_low = s_gpio_wake_power_low;
+    }
 }

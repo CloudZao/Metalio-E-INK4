@@ -15,56 +15,54 @@
 #include <lvgl.h>
 #include "assets/lang_config.h"
 
-namespace {
 
-constexpr const char* TAG = "OtaUpgradeUi";
+static constexpr const char* TAG = "OtaUpgradeUi";
 
-constexpr lv_coord_t kBarW = 320;
-constexpr lv_coord_t kBarH = 28;
+static constexpr lv_coord_t kBarW = 320;
+static constexpr lv_coord_t kBarH = 28;
 // 局部刷新节流：0%/100% 和跨 5% 的更新必须立即刷新。
-constexpr int64_t kProgUiIntervalUs = 2 * 1000 * 1000;
-constexpr uint32_t kShowTimeoutMs = 5000;
-constexpr uint32_t kDismissTimeoutMs = 3000;
-constexpr size_t kVerCap = 48;
-constexpr size_t kHintCap = 64;
+static constexpr int64_t kProgUiIntervalUs = 2 * 1000 * 1000;
+static constexpr uint32_t kShowTimeoutMs = 5000;
+static constexpr uint32_t kDismissTimeoutMs = 3000;
+static constexpr size_t kVerCap = 48;
+static constexpr size_t kHintCap = 64;
 
-std::atomic<bool> s_input_locked{false};
-std::atomic<bool> s_ui_alive{false};
-std::atomic<uint32_t> s_gen{0};
+static std::atomic<bool> s_input_locked{false};
+static std::atomic<bool> s_ui_alive{false};
+static std::atomic<uint32_t> s_gen{0};
 
-lv_obj_t* s_root = nullptr;
-lv_obj_t* s_bar = nullptr;
-lv_obj_t* s_pct_lbl = nullptr;
-lv_obj_t* s_hint_lbl = nullptr;
-int s_shown_percent = -1;
+static lv_obj_t* s_root = nullptr;
+static lv_obj_t* s_bar = nullptr;
+static lv_obj_t* s_pct_lbl = nullptr;
+static lv_obj_t* s_hint_lbl = nullptr;
+static int s_shown_percent = -1;
 
-std::atomic<int> s_pending_percent{-1};
-std::atomic<bool> s_prog_queued{false};
-std::atomic<int64_t> s_last_prog_ui_us{0};
+static std::atomic<int> s_pending_percent{-1};
+static std::atomic<bool> s_prog_queued{false};
+static std::atomic<int64_t> s_last_prog_ui_us{0};
 
 /** Show/Dismiss 分信号量：超时后迟到的 Show Give 不会误唤醒 Dismiss */
-struct SyncSlot {
+struct OtaUpgradeSyncSlot {
     bool ok = false;
     uint32_t gen = 0;
     char current[kVerCap] = {};
     char next[kVerCap] = {};
 };
 // Show/Dismiss 用分离信号量，避免超时后的旧唤醒打断当前流程。
-SyncSlot s_sync{};
-SemaphoreHandle_t s_show_done = nullptr;
-SemaphoreHandle_t s_dismiss_done = nullptr;
+static OtaUpgradeSyncSlot s_sync{};
+static SemaphoreHandle_t s_show_done = nullptr;
+static SemaphoreHandle_t s_dismiss_done = nullptr;
 
-struct HintMsg {
+struct OtaUpgradeHintMsg {
     uint32_t gen = 0;
     char text[kHintCap] = {};
 };
 
-const lv_font_t* UiFont() {
+static const lv_font_t* UiFont() {
     const lv_font_t* f = fontpack_lv_font_ui();
     return f != nullptr ? f : LV_FONT_DEFAULT;
 }
-
-void CopyCapped(char* dst, size_t cap, const char* src) {
+static void CopyCapped(char* dst, size_t cap, const char* src) {
     if (dst == nullptr || cap == 0) {
         return;
     }
@@ -75,7 +73,7 @@ void CopyCapped(char* dst, size_t cap, const char* src) {
     std::snprintf(dst, cap, "%s", src);
 }
 
-bool EnsureSyncSems() {
+static bool EnsureSyncSems() {
     if (s_show_done == nullptr) {
         s_show_done = xSemaphoreCreateBinary();
     }
@@ -85,7 +83,7 @@ bool EnsureSyncSems() {
     return s_show_done != nullptr && s_dismiss_done != nullptr;
 }
 
-void DrainSem(SemaphoreHandle_t sem) {
+static void DrainSem(SemaphoreHandle_t sem) {
     if (sem == nullptr) {
         return;
     }
@@ -93,7 +91,7 @@ void DrainSem(SemaphoreHandle_t sem) {
     }
 }
 
-void ClearWidgetPtrs() {
+static void ClearWidgetPtrs() {
     s_root = nullptr;
     s_bar = nullptr;
     s_pct_lbl = nullptr;
@@ -101,7 +99,7 @@ void ClearWidgetPtrs() {
     s_shown_percent = -1;
 }
 
-void TeardownUi() {
+static void TeardownUi() {
     lv_obj_t* root = s_root;
     ClearWidgetPtrs();
     s_ui_alive.store(false, std::memory_order_release);
@@ -110,7 +108,7 @@ void TeardownUi() {
     }
 }
 
-void ApplyPercentLocked(int percent) {
+static void ApplyPercentLocked(int percent) {
     if (!s_ui_alive.load(std::memory_order_acquire) || s_bar == nullptr || s_pct_lbl == nullptr) {
         return;
     }
@@ -130,7 +128,7 @@ void ApplyPercentLocked(int percent) {
     lv_label_set_text(s_pct_lbl, buf);
 }
 
-void BuildUi(const char* current_ver, const char* new_ver) {
+static void BuildUi(const char* current_ver, const char* new_ver) {
     TeardownUi();
 
     // 待机若冻结 EPD flush，进度无法上屏
@@ -183,15 +181,18 @@ void BuildUi(const char* current_ver, const char* new_ver) {
     lv_obj_set_style_text_align(cur_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_clear_flag(cur_lbl, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t* new_lbl = lv_label_create(panel);
-    std::snprintf(line, sizeof(line), Lang::Strings::OTA_NEW_VER_FMT, new_ver);
-    lv_label_set_text(new_lbl, line);
-    lv_obj_set_width(new_lbl, LV_HOR_RES - 64);
-    lv_label_set_long_mode(new_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(new_lbl, font, 0);
-    lv_obj_set_style_text_color(new_lbl, lv_color_black(), 0);
-    lv_obj_set_style_text_align(new_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_clear_flag(new_lbl, LV_OBJ_FLAG_CLICKABLE);
+    // new_ver 为空：SD 本地升级，不展示「最新版本」
+    if (new_ver != nullptr && new_ver[0] != '\0') {
+        lv_obj_t* new_lbl = lv_label_create(panel);
+        std::snprintf(line, sizeof(line), Lang::Strings::OTA_NEW_VER_FMT, new_ver);
+        lv_label_set_text(new_lbl, line);
+        lv_obj_set_width(new_lbl, LV_HOR_RES - 64);
+        lv_label_set_long_mode(new_lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(new_lbl, font, 0);
+        lv_obj_set_style_text_color(new_lbl, lv_color_black(), 0);
+        lv_obj_set_style_text_align(new_lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_clear_flag(new_lbl, LV_OBJ_FLAG_CLICKABLE);
+    }
 
     lv_coord_t bar_w = kBarW;
     if (bar_w > LV_HOR_RES - 64) {
@@ -238,7 +239,7 @@ void BuildUi(const char* current_ver, const char* new_ver) {
     ESP_LOGI(TAG, "overlay shown cur=%s new=%s", current_ver, new_ver);
 }
 
-bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
+static bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
     if (cb == nullptr) {
         return false;
     }
@@ -258,8 +259,8 @@ bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
     return ok;
 }
 
-void AsyncShow(void* p) {
-    auto* slot = static_cast<SyncSlot*>(p);
+static void AsyncShow(void* p) {
+    auto* slot = static_cast<OtaUpgradeSyncSlot*>(p);
     if (slot == nullptr) {
         return;
     }
@@ -274,8 +275,8 @@ void AsyncShow(void* p) {
     }
 }
 
-void AsyncDismiss(void* p) {
-    auto* slot = static_cast<SyncSlot*>(p);
+static void AsyncDismiss(void* p) {
+    auto* slot = static_cast<OtaUpgradeSyncSlot*>(p);
     TeardownUi();
     if (slot != nullptr) {
         slot->ok = true;
@@ -285,7 +286,7 @@ void AsyncDismiss(void* p) {
     }
 }
 
-void AsyncApplyProgress(void* /*p*/) {
+static void AsyncApplyProgress(void* /*p*/) {
     s_prog_queued.store(false, std::memory_order_release);
     if (!s_ui_alive.load(std::memory_order_acquire)) {
         return;
@@ -305,8 +306,8 @@ void AsyncApplyProgress(void* /*p*/) {
     }
 }
 
-void AsyncHint(void* p) {
-    auto* msg = static_cast<HintMsg*>(p);
+static void AsyncHint(void* p) {
+    auto* msg = static_cast<OtaUpgradeHintMsg*>(p);
     if (msg == nullptr) {
         return;
     }
@@ -317,7 +318,7 @@ void AsyncHint(void* p) {
     delete msg;
 }
 
-bool WaitSem(SemaphoreHandle_t sem, uint32_t timeout_ms) {
+static bool WaitSem(SemaphoreHandle_t sem, uint32_t timeout_ms) {
     if (sem == nullptr) {
         return false;
     }
@@ -329,7 +330,6 @@ bool WaitSem(SemaphoreHandle_t sem, uint32_t timeout_ms) {
     return s_sync.ok;
 }
 
-}  // namespace
 
 bool OtaUpgradeScreen::Show(const char* current_version, const char* new_version) {
     // 先锁键，再建 UI：即使建页失败也不应让用户乱点
@@ -347,7 +347,12 @@ bool OtaUpgradeScreen::Show(const char* current_version, const char* new_version
     s_sync.ok = false;
     s_sync.gen = gen;
     CopyCapped(s_sync.current, sizeof(s_sync.current), current_version);
-    CopyCapped(s_sync.next, sizeof(s_sync.next), new_version);
+    // 空串保留为空：SD 升级不展示「最新版本」行（勿落成 "—"）
+    if (new_version == nullptr || new_version[0] == '\0') {
+        s_sync.next[0] = '\0';
+    } else {
+        CopyCapped(s_sync.next, sizeof(s_sync.next), new_version);
+    }
 
     if (!LvAsyncCallLocked(AsyncShow, &s_sync)) {
         return false;
@@ -394,7 +399,7 @@ void OtaUpgradeScreen::SetHint(const char* hint) {
     if (!s_input_locked.load(std::memory_order_acquire) || hint == nullptr) {
         return;
     }
-    auto* msg = new HintMsg{};
+    auto* msg = new OtaUpgradeHintMsg{};
     msg->gen = s_gen.load(std::memory_order_acquire);
     std::snprintf(msg->text, sizeof(msg->text), "%s", hint);
     if (!LvAsyncCallLocked(AsyncHint, msg)) {
@@ -426,7 +431,7 @@ void OtaUpgradeScreen::Dismiss() {
         return;
     }
 
-    (void)WaitSem(s_dismiss_done, kDismissTimeoutMs);
+    WaitSem(s_dismiss_done, kDismissTimeoutMs);
     // 无论 UI 是否拆干净，都必须放行按键，避免永久锁死
     s_input_locked.store(false, std::memory_order_release);
     ESP_LOGI(TAG, "dismissed");

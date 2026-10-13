@@ -190,7 +190,7 @@ int font_loader_init_flash(const char* partition_label) {
     s_ctx.data_offset = (uint32_t)hdr.data_offset;
     s_ctx.last_err = FONT_LOADER_OK;
 
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "flash mmap '%s' ptr=%p size=%u items=%lu index@%lu data@%lu "
              "(ESP32-S3 data window ~0x3C000000)",
              label, (void*)base, (unsigned)part->size, (unsigned long)s_ctx.total_items,

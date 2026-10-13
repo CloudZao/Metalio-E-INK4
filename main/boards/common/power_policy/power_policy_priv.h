@@ -27,8 +27,8 @@ enum class Mode : uint8_t {
 
 inline constexpr int kIdleToStandbySecDefault = 3 * 60;         // 无操作 → 待机默认秒数
 inline constexpr int kNetGraceSecDefault = 30;                  // 断网前暂留默认秒数
-inline constexpr int kStandbyToShutdownSecDefault = 3 * 60;     // 浅睡累计 → 关机默认秒数
-inline constexpr uint64_t kLightSleepSliceUs = 10ULL * 1000 * 1000; // 单次浅睡切片上限
+inline constexpr int kStandbyToShutdownSecDefault = 30 * 60;    // 浅睡累计 → 关机默认秒数
+inline constexpr uint64_t kLightSleepSliceUs = 60ULL * 1000 * 1000; // 单次浅睡切片上限
 inline constexpr int kStandbyUiSettleMs = 2000;                 // 进待机攒帧上限（就绪即提前 Park）
 inline constexpr bool kStandbyLpUseLightSleep = true; // true=浅睡；false=vTaskDelay（串口排查）
 
@@ -50,7 +50,7 @@ extern int idle_cpu_mhz;                     // AppIdle 目标 CPU MHz
 extern int queued_cpu_mhz;                   // 最近投递/应用的目标 MHz；0=未知
 extern int idle_to_standby_sec;              // 无操作满此时长（秒）→ 待机页
 extern int net_grace_sec;                    // 断网前暂留（秒）
-extern int standby_to_shutdown_sec;          // 待机浅睡累计满此时长（秒）→ 关机；0=不自动关机
+extern int standby_to_shutdown_sec;          // 待机浅睡累计满此时长（秒）→ 关机；0=永不
 extern int64_t last_user_activity_us;        // 最近用户活动时间戳
 extern int64_t standby_elapsed_us;           // 已闭合的待机时长（清醒段+已完成浅睡段）
 extern int64_t standby_awake_mark_us;        // 当前清醒段起点；0=不在清醒段

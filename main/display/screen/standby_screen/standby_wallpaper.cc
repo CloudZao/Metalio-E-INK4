@@ -16,44 +16,41 @@
 #include <lvgl.h>
 #include "assets/lang_config.h"
 
-namespace standby_wallpaper {
-namespace {
 
-constexpr const char* TAG = "StandbyWp";
-constexpr int kDecodeMaxW = 480;
-constexpr int kDecodeMaxH = 800;
-constexpr uint32_t kLoadStack = 12 * 1024;
+static constexpr const char* TAG = "StandbyWp";
+static constexpr int kDecodeMaxW = 480;
+static constexpr int kDecodeMaxH = 800;
+static constexpr uint32_t kLoadStack = 12 * 1024;
 
-enum class LoadState : uint8_t { Idle = 0, Loading = 1, Ready = 2, Failed = 3 };
+enum class StandbyWpLoadState : uint8_t { Idle = 0, Loading = 1, Ready = 2, Failed = 3 };
 
-struct UiState {
+struct StandbyWpUiState {
     lv_obj_t* root = nullptr;
     lv_obj_t* img = nullptr;
 };
 
-UiState s_ui;
-bool s_alive = false;
-uint32_t s_epoch = 0;
-reader::RasterImage* s_raster = nullptr;
-std::atomic<bool> s_load_busy{false};
-std::atomic<LoadState> s_load_state{LoadState::Idle};
+static StandbyWpUiState s_ui;
+static bool s_alive = false;
+static uint32_t s_epoch = 0;
+static reader::RasterImage* s_raster = nullptr;
+static std::atomic<bool> s_load_busy{false};
+static std::atomic<StandbyWpLoadState> s_load_state{StandbyWpLoadState::Idle};
 
-struct LoadWork {
+struct StandbyWpLoadWork {
     uint32_t epoch = 0;
 };
 
-struct LoadResult {
+struct StandbyWpLoadResult {
     uint32_t epoch = 0;
     bool ok = false;
     char err[64] = {};
     reader::RasterImage* img = nullptr;
 };
 
-void MarkLoadDone(LoadState st) {
+static void MarkLoadDone(StandbyWpLoadState st) {
     s_load_state.store(st, std::memory_order_release);
 }
-
-void DetachImage() {
+static void DetachImage() {
     if (s_ui.img != nullptr) {
         lv_image_set_src(s_ui.img, nullptr);
         lv_obj_add_flag(s_ui.img, LV_OBJ_FLAG_HIDDEN);
@@ -64,8 +61,8 @@ void DetachImage() {
     }
 }
 
-void ApplyLoadAsync(void* p) {
-    auto* msg = static_cast<LoadResult*>(p);
+static void ApplyLoadAsync(void* p) {
+    auto* msg = static_cast<StandbyWpLoadResult*>(p);
     s_load_busy.store(false, std::memory_order_release);
     if (msg == nullptr) {
         return;
@@ -77,7 +74,7 @@ void ApplyLoadAsync(void* p) {
     }
     if (!msg->ok || msg->img == nullptr || msg->img->empty()) {
         ESP_LOGW(TAG, "load failed: %s", msg->err[0] != '\0' ? msg->err : "unknown");
-        MarkLoadDone(LoadState::Failed);
+        MarkLoadDone(StandbyWpLoadState::Failed);
         delete msg->img;
         delete msg;
         return;
@@ -96,18 +93,18 @@ void ApplyLoadAsync(void* p) {
         lv_obj_invalidate(s_ui.root);
         lv_refr_now(nullptr);
     }
-    MarkLoadDone(LoadState::Ready);
+    MarkLoadDone(StandbyWpLoadState::Ready);
     delete msg;
 }
 
-void LoadTask(void* arg) {
-    auto* work = static_cast<LoadWork*>(arg);
-    auto* msg = new LoadResult{};
+static void LoadTask(void* arg) {
+    auto* work = static_cast<StandbyWpLoadWork*>(arg);
+    auto* msg = new StandbyWpLoadResult{};
     msg->epoch = work != nullptr ? work->epoch : 0;
     delete work;
 
     char path[192] = {};
-    if (!wallpaper::TryResolveStandbyWallpaperPath(path, sizeof(path))) {
+    if (!Wallpaper_TryResolveStandbyWallpaperPath(path, sizeof(path))) {
         std::snprintf(msg->err, sizeof(msg->err), "%s", Lang::Strings::STANDBY_WP_NOT_FOUND);
     } else {
         auto* img = new reader::RasterImage();
@@ -127,21 +124,20 @@ void LoadTask(void* arg) {
         delete msg->img;
         delete msg;
         s_load_busy.store(false, std::memory_order_release);
-        MarkLoadDone(LoadState::Failed);
+        MarkLoadDone(StandbyWpLoadState::Failed);
     }
     vTaskDelete(nullptr);
 }
 
-}  // namespace
 
-void Build(lv_obj_t* root) {
+void StandbyWallpaper_Build(lv_obj_t* root) {
     if (root == nullptr) {
         return;
     }
     ++s_epoch;
     s_alive = true;
-    s_ui = UiState{};
-    MarkLoadDone(LoadState::Idle);
+    s_ui = StandbyWpUiState{};
+    MarkLoadDone(StandbyWpLoadState::Idle);
 
     lv_obj_set_style_bg_color(root, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
@@ -155,38 +151,44 @@ void Build(lv_obj_t* root) {
     lv_obj_clear_flag(s_ui.img, LV_OBJ_FLAG_CLICKABLE);
 }
 
-void StartLoad() {
+void StandbyWallpaper_StartLoad() {
     if (!s_alive) {
         return;
     }
     if (s_load_busy.exchange(true, std::memory_order_acq_rel)) {
         return;
     }
-    MarkLoadDone(LoadState::Loading);
-    auto* work = new LoadWork{s_epoch};
+    MarkLoadDone(StandbyWpLoadState::Loading);
+    auto* work = new StandbyWpLoadWork{s_epoch};
     // 栈放 SPIRAM：解码峰值与壁纸缩略图任务同级
     if (xTaskCreatePinnedToCoreWithCaps(LoadTask, "stb_wp_load", kLoadStack, work, 5, nullptr, 0,
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         delete work;
         s_load_busy.store(false, std::memory_order_release);
-        MarkLoadDone(LoadState::Failed);
+        MarkLoadDone(StandbyWpLoadState::Failed);
         ESP_LOGW(TAG, "load task create failed");
     }
 }
 
-bool IsContentReady() {
-    const LoadState st = s_load_state.load(std::memory_order_acquire);
-    return st == LoadState::Ready || st == LoadState::Failed;
+bool StandbyWallpaper_IsContentReady() {
+    const StandbyWpLoadState st = s_load_state.load(std::memory_order_acquire);
+    return st == StandbyWpLoadState::Ready || st == StandbyWpLoadState::Failed;
 }
 
-void Teardown() {
-    ++s_epoch;  // 丢弃在途 LoadResult，避免 UAF
+void StandbyWallpaper_Teardown() {
+    ++s_epoch;  // 丢弃在途 StandbyWpLoadResult，避免 UAF
     s_alive = false;
     DetachImage();
-    s_ui = UiState{};
-    MarkLoadDone(LoadState::Idle);
+    s_ui = StandbyWpUiState{};
+    MarkLoadDone(StandbyWpLoadState::Idle);
     // 不强制清 s_load_busy：任务结束时 ApplyLoadAsync / 失败路径会清；
     // 若任务仍跑，epoch 不匹配会释放像素且清 busy。
 }
 
-}  // namespace standby_wallpaper
+void StandbyWallpaper_InvalidateDecoded() {
+    ++s_epoch;
+    DetachImage();
+    if (s_alive) {
+        MarkLoadDone(StandbyWpLoadState::Idle);
+    }
+}

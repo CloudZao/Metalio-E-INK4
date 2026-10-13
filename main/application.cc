@@ -5,6 +5,7 @@
 #include "system_info.h"
 #include "audio_codec.h"
 #include "websocket_protocol.h"
+#include "mqtt_protocol.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "assets.h"
@@ -25,9 +26,15 @@
 #include "reader/book_library_warmup.h"
 #include "device_wifi_location.h"
 #include "api_endpoints.h"
+#include "chat_cloud.h"
+#include "SdCardManager.hpp"
+#include "sd_log_writer.h"
 
 #include <cstring>
 #include <ctime>
+#include <cerrno>
+#include <unistd.h>
+#include <sys/stat.h>
 #include <array>
 #include <algorithm>
 #include <thread>
@@ -49,7 +56,7 @@ constexpr int kAssistantNetBudgetMs = 30000;
 bool EnsureAssistantNetworkReady() {
     auto& board = Board::GetInstance();
     auto& app = Application::GetInstance();
-    if (!api::HasHost()) {
+    if (!chat_cloud::Available()) {
         ESP_LOGI(TAG, "assistant network skipped: blank cloud endpoints");
         return false;
     }
@@ -136,19 +143,6 @@ Application::~Application() {
     vEventGroupDelete(event_group_);
 }
 
-bool Application::ShouldAllowBootAudio() const {
-    switch (device_state_) {
-        case kDeviceStateStarting:
-        case kDeviceStateWifiConfiguring:
-        case kDeviceStateAudioTesting:
-        case kDeviceStateActivating:
-        case kDeviceStateUpgrading:
-            return true;
-        default:
-            return false;
-    }
-}
-
 void Application::EnsureAudioServiceRunning() {
     if (!audio_initialized_) {
         auto codec = Board::GetInstance().GetAudioCodec();
@@ -201,8 +195,69 @@ void Application::EnsureVoiceModelsReady() {
     voice_models_ready_ = true;
 }
 
+bool Application::EnsureChatConfiguration() {
+    // Yunxin uses the explicitly configured URL/token; OTA must not gate chat.
+    if (chat_cloud::IsYunxin()) { return true; }
+    if (chat_config_loading_) { return false; }
+    auto has_endpoint = []() {
+        Settings ws(chat_cloud::WebsocketNamespace());
+        Settings mqtt(chat_cloud::MqttNamespace());
+        return !ws.GetString("url").empty() || !mqtt.GetString("endpoint").empty();
+    };
+    if (has_endpoint() && activation_code_.empty() && !chat_activation_pending_) { return true; }
+
+    chat_config_loading_ = true;
+    struct LoadingGuard {
+        bool& loading;
+        ~LoadingGuard() { loading = false; }
+    } guard{chat_config_loading_};
+    SetDeviceState(kDeviceStateConnecting);
+    if (!EnsureAssistantNetworkReady()) {
+        SetDeviceState(kDeviceStateIdle);
+        if (AssistantScreen::IsActive() && !StandbyScreen::IsActive()) {
+            Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
+        }
+        return false;
+    }
+
+    // Boot may have skipped OTA because WiFi was not ready. Fetch credentials
+    // now, before choosing MQTT/WebSocket or allocating the audio tasks.
+    Ota ota;
+    esp_err_t err = ota.CheckChatConfiguration();
+    if (err == ESP_OK && ota.HasActivationChallenge()) {
+        err = ota.Activate();
+        if (err == ESP_OK) { err = ota.CheckChatConfiguration(); }
+    }
+    if (!AssistantScreen::IsActive() || StandbyScreen::IsActive()) {
+        SetDeviceState(kDeviceStateIdle);
+        return false;
+    }
+    SetDeviceState(kDeviceStateIdle);
+    if (ota.HasActivationCode() || ota.HasActivationChallenge()) {
+        chat_activation_pending_ = true;
+        ESP_LOGW(TAG, "Chat configuration requires activation; retry on next PTT/entry");
+        if (ota.HasActivationCode()) {
+            ShowActivationCode(ota.GetActivationCode(), ota.GetActivationMessage());
+        } else {
+            Alert(Lang::Strings::ACTIVATION, Lang::Strings::ACTIVATION, "cloud_slash");
+        }
+        return false;
+    }
+    if (err != ESP_OK || !has_endpoint()) {
+        ESP_LOGE(TAG, "Chat OTA configuration unavailable: err=%d websocket=%d mqtt=%d",
+                 err, ota.HasWebsocketConfig(), ota.HasMqttConfig());
+        Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
+        return false;
+    }
+    activation_code_.clear();
+    activation_message_.clear();
+    chat_activation_pending_ = false;
+    current_version_ = ota.GetCurrentVersion();
+    return true;
+}
+
 void Application::EnsureProtocolReady() {
-    if (!api::HasHost()) {
+    if (!chat_cloud::Available()) {
         ESP_LOGI(TAG, "EnsureProtocolReady skipped: blank cloud endpoints");
         protocol_ready_ = false;
         protocol_.reset();
@@ -211,11 +266,19 @@ void Application::EnsureProtocolReady() {
     if (protocol_ready_ && protocol_) {
         return;
     }
+    if (!EnsureChatConfiguration()) { return; }
 
     auto display = Board::GetInstance().GetDisplay();
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
-    protocol_ = std::make_unique<WebsocketProtocol>();
+    Settings ws(chat_cloud::WebsocketNamespace());
+    Settings mqtt(chat_cloud::MqttNamespace());
+    if (!chat_cloud::IsYunxin() && ws.GetString("url").empty() &&
+        !mqtt.GetString("endpoint").empty()) {
+        protocol_ = std::make_unique<MqttProtocol>();
+    } else {
+        protocol_ = std::make_unique<WebsocketProtocol>();
+    }
 
     protocol_->OnConnected([this]() {
         DismissAlert();
@@ -226,7 +289,7 @@ void Application::EnsureProtocolReady() {
         xEventGroupSetBits(event_group_, MAIN_EVENT_ERROR);
     });
     protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
-        if (device_state_ == kDeviceStateSpeaking) {
+        if (device_state_ == kDeviceStateSpeaking && chat_cloud::SpeechPlaybackEnabled()) {
             audio_service_.PushPacketToDecodeQueue(std::move(packet));
         }
     });
@@ -255,7 +318,8 @@ void Application::EnsureProtocolReady() {
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {
                     aborted_ = false;
-                    if (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening) {
+                    if (chat_cloud::SpeechPlaybackEnabled() &&
+                        (device_state_ == kDeviceStateIdle || device_state_ == kDeviceStateListening)) {
                         SetDeviceState(kDeviceStateSpeaking);
                     }
                 });
@@ -315,7 +379,7 @@ void Application::EnsureProtocolReady() {
             auto message = cJSON_GetObjectItem(root, "message");
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(status) && cJSON_IsString(message) && cJSON_IsString(emotion)) {
-                Alert(status->valuestring, message->valuestring, emotion->valuestring, Lang::Sounds::OGG_VIBRATION);
+                Alert(status->valuestring, message->valuestring, emotion->valuestring);
             } else {
                 ESP_LOGW(TAG, "Alert command requires status, message and emotion");
             }
@@ -372,8 +436,7 @@ bool Application::EnterContinuousListening() {
             ESP_LOGE(TAG, "EnterContinuousListening: network not ready");
             SetDeviceState(kDeviceStateIdle);
             if (!StandbyScreen::IsActive()) {
-                Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash",
-                      Lang::Sounds::OGG_EXCLAMATION);
+                Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
             }
             return false;
         }
@@ -385,13 +448,14 @@ bool Application::EnterContinuousListening() {
         }
     }
 
-    SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
+    SetListeningMode(chat_cloud::UsesXiaozhiProtocol() ? kListeningModeManualStop :
+                     (aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime));
     return true;
 }
 
 void Application::StartXiaozhiVoice(bool enter_listening) {
-    if (!api::HasHost()) {
-        ESP_LOGI(TAG, "StartXiaozhiVoice skipped: blank cloud endpoints");
+    if (!chat_cloud::Available()) {
+        ESP_LOGD(TAG, "StartXiaozhiVoice skipped: blank cloud endpoints");
         activation_code_.clear();
         activation_message_.clear();
         StopXiaozhiVoice();
@@ -402,7 +466,7 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
     if (Board::GetInstance().IsWifiConfigMode()) {
         ESP_LOGW(TAG, "StartXiaozhiVoice skipped: wifi config mode");
         // 与 EnterWifiConfigMode 一致：状态「配网模式」，勿套「错误」
-        Alert(Lang::Strings::WIFI_CONFIG_MODE, Lang::Strings::NEED_WIFI_CFG, "gear", "");
+        Alert(Lang::Strings::WIFI_CONFIG_MODE, Lang::Strings::NEED_WIFI_CFG, "gear");
         return;
     }
 
@@ -412,7 +476,7 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
         if (enter_listening) {
             pending_xiaozhi_listen_.store(true, std::memory_order_release);
         }
-        ESP_LOGI(TAG, "StartXiaozhiVoice deferred until boot ready (listen=%d)",
+        ESP_LOGD(TAG, "StartXiaozhiVoice deferred until boot ready (listen=%d)",
                  enter_listening ? 1 : 0);
         auto display = Board::GetInstance().GetDisplay();
         display->SetStatus(Lang::Strings::PLEASE_WAIT);
@@ -433,8 +497,7 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
                 SetDeviceState(kDeviceStateIdle);
                 if (!StandbyScreen::IsActive()) {
                     ApplyIdleStatusBar();
-                    Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash",
-                          Lang::Sounds::OGG_EXCLAMATION);
+                    Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
                 }
                 return;
             }
@@ -460,9 +523,10 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
         ESP_LOGI(TAG, "Starting Xiaozhi voice session (%s)",
                  enter_listening ? "hold-through listen" : "PTT: prepare only");
 
+        EnsureProtocolReady();
+        if (!protocol_) { return; }
         EnsureAudioServiceRunning();
         EnsureVoiceModelsReady();
-        EnsureProtocolReady();
 
         // Ensure* 可能较慢；期间离页则拆协议并停音频，与 StopXiaozhiVoice 一致归还占用
         if (!AssistantScreen::IsActive()) {
@@ -502,8 +566,7 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
                 SetDeviceState(kDeviceStateIdle);
                 if (!StandbyScreen::IsActive()) {
                     ApplyIdleStatusBar();
-                    Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash",
-                          Lang::Sounds::OGG_EXCLAMATION);
+                    Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
                 }
                 return;
             }
@@ -547,8 +610,7 @@ void Application::StartXiaozhiVoice(bool enter_listening) {
             }
             SetDeviceState(kDeviceStateIdle);
             ApplyIdleStatusBar();
-            Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash",
-                      Lang::Sounds::OGG_EXCLAMATION);
+            Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
         } else if (!protocol_->OpenAudioChannel()) {
             ESP_LOGW(TAG, "Xiaozhi voice: preload OpenAudioChannel failed; retry on PTT");
             if (!AssistantScreen::IsActive()) {
@@ -613,9 +675,9 @@ void Application::CheckAssetsVersion() {
 
         char message[256];
         snprintf(message, sizeof(message), Lang::Strings::FOUND_NEW_ASSETS, download_url.c_str());
-        Alert(Lang::Strings::LOADING_ASSETS, message, "cloud_arrow_down", Lang::Sounds::OGG_UPGRADE);
+        Alert(Lang::Strings::LOADING_ASSETS, message, "cloud_arrow_down");
         
-        // Wait for the audio service to be idle for 3 seconds
+        // Give UI time before entering upgrade state
         vTaskDelay(pdMS_TO_TICKS(3000));
         SetDeviceState(kDeviceStateUpgrading);
         display->SetChatMessage("system", Lang::Strings::PLEASE_WAIT);
@@ -631,7 +693,7 @@ void Application::CheckAssetsVersion() {
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         if (!success) {
-            Alert(Lang::Strings::ERROR, Lang::Strings::DOWNLOAD_ASSETS_FAILED, "circle_xmark", Lang::Sounds::OGG_EXCLAMATION);
+            Alert(Lang::Strings::ERROR, Lang::Strings::DOWNLOAD_ASSETS_FAILED, "circle_xmark");
             vTaskDelay(pdMS_TO_TICKS(2000));
             return;
         }
@@ -659,7 +721,7 @@ void Application::CheckNewVersion(Ota& ota) {
         return;
     }
     // Cloudzao 空白开源版必须无条件跳过 OTA / 激活检测；即使旧 NVS 里残留 ota_url 也不能继续请求。
-    if (!api::HasDefaultOtaUrl()) {
+    if (!chat_cloud::UsesXiaozhiProtocol() && !api::HasDefaultOtaUrl()) {
         ESP_LOGW(TAG, "skip CheckNewVersion: Cloudzao blank endpoints");
         xEventGroupSetBits(event_group_, MAIN_EVENT_CHECK_NEW_VERSION_DONE);
         return;
@@ -671,6 +733,10 @@ void Application::CheckNewVersion(Ota& ota) {
     }
     while (true) {
         SetDeviceState(kDeviceStateActivating);
+        WaitWhileActivationPaused();
+        if (device_state_ == kDeviceStateIdle) {
+            break;
+        }
         auto display = board.GetDisplay();
         display->SetStatus(Lang::Strings::CHECKING_NEW_VERSION);
 
@@ -686,7 +752,7 @@ void Application::CheckNewVersion(Ota& ota) {
             snprintf(error_message, sizeof(error_message), "code=%d, url=%s", err, ota.GetCheckVersionUrl().c_str());
             char buffer[256];
             snprintf(buffer, sizeof(buffer), Lang::Strings::CHECK_NEW_VERSION_FAILED, retry_delay, error_message);
-            Alert(Lang::Strings::ERROR, buffer, "cloud_slash", Lang::Sounds::OGG_EXCLAMATION);
+            Alert(Lang::Strings::ERROR, buffer, "cloud_slash");
 
             ESP_LOGW(TAG, "Check new version failed, retry in %d seconds (%d/%d)", retry_delay, retry_count, MAX_RETRY);
             for (int i = 0; i < retry_delay; i++) {
@@ -740,6 +806,10 @@ void Application::CheckNewVersion(Ota& ota) {
 
         // This will block the loop until the activation is done or timeout
         for (int i = 0; i < 10; ++i) {
+            WaitWhileActivationPaused();
+            if (device_state_ == kDeviceStateIdle) {
+                break;
+            }
             ESP_LOGI(TAG, "Activating... %d/%d", i + 1, 10);
             esp_err_t err = ota.Activate();
             if (err == ESP_OK) {
@@ -762,6 +832,84 @@ void Application::CheckNewVersion(Ota& ota) {
     }
 }
 
+bool Application::TrySdCardFirmwareUpgrade() {
+    if (!SdCardManager::GetInstance().IsMounted()) {
+        return false;
+    }
+
+    struct stat st {};
+    if (stat(kOtaSdFirmwarePath, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0) {
+        return false;
+    }
+
+    ESP_LOGI(TAG, "SD firmware found: %s (%ld bytes)", kOtaSdFirmwarePath,
+             static_cast<long>(st.st_size));
+
+    const esp_app_desc_t* app_desc = esp_app_get_description();
+    const std::string current_version =
+        (app_desc != nullptr && app_desc->version[0] != '\0') ? app_desc->version : "—";
+
+    // Sd 模式：立刻升级 / 取消；文案仅「SD卡发现新固件 + 当前版本」
+    const auto choice = OtaConfirmDialog::ShowBlocking(
+        current_version.c_str(), "", OtaConfirmDialog::Mode::Sd);
+    if (choice != OtaConfirmDialog::Choice::Upgrade) {
+        ESP_LOGI(TAG, "SD firmware upgrade cancelled; keep %s for next boot", kOtaSdFirmwarePath);
+        return false;
+    }
+
+    if (protocol_ && protocol_->IsAudioChannelOpened()) {
+        protocol_->CloseAudioChannel();
+    }
+
+    SetDeviceState(kDeviceStateUpgrading);
+    // 进度页不传最新版本（空串隐藏「最新版本」行）
+    if (!OtaUpgradeScreen::Show(current_version.c_str(), "")) {
+        ESP_LOGW(TAG, "SD OTA upgrade UI show incomplete; continuing with keys locked");
+    }
+    OtaUpgradeScreen::SetProgress(0);
+    Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download");
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    PowerPolicy::GetInstance().Acquire(PowerNeed::OtaDownload);
+    StopAudioServiceIfRunning();
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    Ota ota;
+    const bool ok = ota.StartUpgradeFromFile(kOtaSdFirmwarePath, [](int progress, size_t /*speed*/) {
+        OtaUpgradeScreen::SetProgress(progress);
+    });
+    PowerPolicy::GetInstance().Release(PowerNeed::OtaDownload);
+
+    auto remove_sd_fw = []() {
+        if (unlink(kOtaSdFirmwarePath) != 0) {
+            ESP_LOGW(TAG, "failed to remove %s: errno=%d", kOtaSdFirmwarePath, errno);
+        } else {
+            ESP_LOGI(TAG, "removed %s", kOtaSdFirmwarePath);
+        }
+    };
+
+    if (!ok) {
+        ESP_LOGE(TAG, "SD firmware upgrade failed");
+        OtaUpgradeScreen::SetHint(Lang::Strings::UPGRADE_FAILED);
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        OtaUpgradeScreen::Dismiss();
+        remove_sd_fw();
+        if (xiaozhi_voice_active_) {
+            EnsureAudioServiceRunning();
+        }
+        return false;
+    }
+
+    OtaIgnore::Clear();
+    ESP_LOGI(TAG, "SD firmware upgrade successful, rebooting...");
+    OtaUpgradeScreen::SetProgress(100);
+    OtaUpgradeScreen::SetHint(Lang::Strings::OTA_SUCCESS_REBOOT);
+    vTaskDelay(pdMS_TO_TICKS(1200));
+    remove_sd_fw();
+    Reboot();
+    return true;
+}
+
 void Application::ShowActivationCode(const std::string& code, const std::string& message) {
     activation_code_ = code;
     activation_message_ = message;
@@ -774,11 +922,28 @@ void Application::ShowActivationCode(const std::string& code, const std::string&
     display->SetStatus(status);
 }
 
+void Application::WaitWhileActivationPaused() {
+    while (activation_paused_.load(std::memory_order_acquire) &&
+           device_state_ == kDeviceStateActivating) {
+        // 暂停期间吞掉 kick，避免一恢复就连打 Activate
+        activation_kick_.store(false, std::memory_order_release);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 bool Application::DelayMsInterruptible(int ms) {
     constexpr int kStepMs = 100;
     for (int elapsed = 0; elapsed < ms; elapsed += kStepMs) {
         if (device_state_ == kDeviceStateIdle) {
             return false;
+        }
+        if (activation_paused_.load(std::memory_order_acquire)) {
+            WaitWhileActivationPaused();
+            if (device_state_ == kDeviceStateIdle) {
+                return false;
+            }
+            // 暂停结束：本段延迟已实质耗尽，交回循环决定是否再 Activate
+            return true;
         }
         if (activation_kick_.exchange(false, std::memory_order_acq_rel)) {
             return true;
@@ -789,6 +954,25 @@ bool Application::DelayMsInterruptible(int ms) {
         return false;
     }
     return activation_kick_.exchange(false, std::memory_order_acq_rel);
+}
+
+void Application::PauseActivationPolling() {
+    if (device_state_ != kDeviceStateActivating) {
+        return;
+    }
+    activation_paused_.store(true, std::memory_order_release);
+    ESP_LOGI(TAG, "activation polling paused");
+}
+
+void Application::ResumeActivationPolling() {
+    const bool was = activation_paused_.exchange(false, std::memory_order_acq_rel);
+    if (!was) {
+        return;
+    }
+    if (device_state_ == kDeviceStateActivating) {
+        activation_kick_.store(true, std::memory_order_release);
+    }
+    ESP_LOGI(TAG, "activation polling resumed");
 }
 
 void Application::ResumeActivationAfterStandby() {
@@ -803,20 +987,21 @@ void Application::ResumeActivationAfterStandby() {
         if (!activation_code_.empty()) {
             ShowActivationCode(activation_code_, activation_message_);
         }
-        activation_kick_.store(true, std::memory_order_release);
-        ESP_LOGI(TAG, "resume activation after standby LP");
+        // 上传仍暂停时只恢复 UI，不 kick 轮询
+        if (!activation_paused_.load(std::memory_order_acquire)) {
+            activation_kick_.store(true, std::memory_order_release);
+        }
+        ESP_LOGI(TAG, "resume activation after standby LP (paused=%d)",
+                 activation_paused_.load(std::memory_order_acquire) ? 1 : 0);
     });
 }
 
-void Application::Alert(const char* status, const char* message, const char* emotion, const std::string_view& sound) {
+void Application::Alert(const char* status, const char* message, const char* emotion) {
     ESP_LOGW(TAG, "Alert [%s] %s: %s", emotion, status, message);
     auto display = Board::GetInstance().GetDisplay();
     display->SetStatus(status);
     display->SetEmotion(emotion);
     display->SetChatMessage("system", message);
-    if (!sound.empty()) {
-        PlaySound(sound);
-    }
 }
 
 void Application::ApplyIdleStatusBar() {
@@ -868,13 +1053,20 @@ void Application::StartListening() {
     if (!boot_ready_.load(std::memory_order_acquire)) {
         pending_xiaozhi_voice_.store(true, std::memory_order_release);
         pending_xiaozhi_listen_.store(true, std::memory_order_release);
-        ESP_LOGI(TAG, "StartListening deferred until boot ready");
+        ESP_LOGD(TAG, "StartListening deferred until boot ready");
         Board::GetInstance().GetDisplay()->SetStatus(Lang::Strings::PLEASE_WAIT);
         return;
     }
 
     if (!xiaozhi_voice_active_ || !protocol_) {
-        ESP_LOGW(TAG, "StartListening ignored: Xiaozhi voice session not active");
+        if (!chat_config_loading_ && AssistantScreen::IsActive()) {
+            Schedule([this]() {
+                StartXiaozhiVoice(false);
+                if (xiaozhi_voice_active_ && protocol_ && AssistantScreen::IsPttHeld()) {
+                    StartListening();
+                }
+            });
+        }
         return;
     }
     
@@ -891,8 +1083,7 @@ void Application::StartListening() {
                     SetDeviceState(kDeviceStateIdle);
                     if (!StandbyScreen::IsActive()) {
                         ApplyIdleStatusBar();
-                        Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash",
-                              Lang::Sounds::OGG_EXCLAMATION);
+                        Alert(Lang::Strings::SERVER_NOT_CONNECTED, Lang::Strings::SERVER_NOT_CONNECTED, "cloud_slash");
                     }
                     return;
                 }
@@ -1001,8 +1192,14 @@ void Application::FlushPendingXiaozhiVoice() {
 }
 
 void Application::Start() {
+    chat_cloud::InitializeFromNvs();
     // UI 语言：NVS ui/language，无则 LANG_DEFAULT_CODE（跟 CONFIG_LANGUAGE_*）
     Lang::InitFromNvs();
+
+    // SD 运行日志（默认开；有卡写 metalio/e-ink/logs/metalio_logs.txt）
+    // 挂载且开启时：Flash coredump 覆盖写入 metalio_coredump.elf 后擦槽
+    SdLogWriter_Start();
+    SdLogWriter_ExportCoreDumpIfNeeded();
 
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
@@ -1043,6 +1240,11 @@ void Application::Start() {
     /* Start the clock timer to update the status bar */
     esp_timer_start_periodic(clock_timer_handle_, 1000000);
 
+    // SD 已在板级构造时挂载；UI/主循环就绪后立刻提示，勿等联网
+    Ota ota;
+    ota.MarkCurrentVersionValid();
+    TrySdCardFirmwareUpgrade();
+
     // 书库预热须在 StartNetwork 之前（仅创建后台任务）。
     reader::book_home_snapshot::HydrateFromNvs();
     reader::book_library_warmup::RequestBootWarmup();
@@ -1075,7 +1277,6 @@ void Application::Start() {
     CheckAssetsVersion();
 
     // Check for new firmware version or get the MQTT broker address（OTA 不变）
-    Ota ota;
     CheckNewVersion(ota);
 
     has_server_time_ = ota.HasServerTime();
@@ -1089,7 +1290,7 @@ void Application::Start() {
     // 天气：每天开机拉一次，写入 NVS；当天后续走缓存
     StandbyScreen::EnsureWeatherCached();
     // 壁纸启用：同步灌关机+待机 NVS→缓存，供待机入口路由（勿在 LVGL 任务）
-    wallpaper::HydrateFromNvsNow();
+    Wallpaper_HydrateFromNvsNow();
     // 阅读快照：显示初始化 / StartNetwork 前已灌；此处幂等补灌
     reader::book_home_snapshot::HydrateFromNvs();
     // 开机未连上：勿 EnsureNetworkReady 再空等（会硬占网续扫）
@@ -1120,7 +1321,7 @@ void Application::Start() {
     }
 
     SetDeviceState(kDeviceStateIdle);
-    ESP_LOGI(TAG, "Boot complete; voice/audio deferred until Xiaozhi screen");
+    ESP_LOGD(TAG, "Boot complete; voice/audio deferred until Xiaozhi screen");
     FlushPendingXiaozhiVoice();
 }
 
@@ -1162,8 +1363,7 @@ void Application::MainEventLoop() {
         if (bits & MAIN_EVENT_ERROR) {
             SetDeviceState(kDeviceStateIdle);
             // 状态用错误文案本身，勿套「错误」前缀
-            Alert(last_error_message_.c_str(), last_error_message_.c_str(), "cloud_slash",
-                  Lang::Sounds::OGG_EXCLAMATION);
+            Alert(last_error_message_.c_str(), last_error_message_.c_str(), "cloud_slash");
         }
 
         if (bits & MAIN_EVENT_SEND_AUDIO) {
@@ -1177,13 +1377,6 @@ void Application::MainEventLoop() {
         if (bits & MAIN_EVENT_WAKE_WORD_DETECTED) {
             if (xiaozhi_voice_active_) {
                 OnWakeWordDetected();
-            }
-        }
-
-        if (bits & MAIN_EVENT_VAD_CHANGE) {
-            if (device_state_ == kDeviceStateListening) {
-                auto led = Board::GetInstance().GetLed();
-                led->OnStateChanged();
             }
         }
 
@@ -1236,11 +1429,11 @@ void Application::OnWakeWordDetected() {
         }
         // Set the chat state to wake word detected
         protocol_->SendWakeWordDetected("Hi 钛灵");
-        SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
+        SetListeningMode(chat_cloud::UsesXiaozhiProtocol() ? kListeningModeManualStop :
+                     (aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime));
 #else
-        SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
-        // Play the pop up sound to indicate the wake word is detected
-        audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+        SetListeningMode(chat_cloud::UsesXiaozhiProtocol() ? kListeningModeManualStop :
+                     (aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime));
 #endif
     } else if (device_state_ == kDeviceStateSpeaking) {
         AbortSpeaking(kAbortReasonWakeWordDetected);
@@ -1277,8 +1470,6 @@ void Application::SetDeviceState(DeviceState state) {
 
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
-    auto led = board.GetLed();
-    led->OnStateChanged();
     switch (state) {
         case kDeviceStateUnknown:
         case kDeviceStateIdle:
@@ -1338,6 +1529,16 @@ void Application::SetDeviceState(DeviceState state) {
     PowerPolicy::GetInstance().NotifyDeviceState(state);
 }
 
+void Application::SetLocalChatTtsEnabled(bool enabled) {
+    chat_cloud::SaveLocalTtsEnabled(enabled);
+    if (chat_cloud::UsesXiaozhiProtocol() && !enabled && audio_running_) {
+        audio_service_.ResetDecoder();
+        if (device_state_ == kDeviceStateSpeaking) {
+            SetDeviceState(kDeviceStateIdle);
+        }
+    }
+}
+
 void Application::Reboot() {
     ESP_LOGI(TAG, "Rebooting...");
     // Disconnect the audio channel
@@ -1391,7 +1592,7 @@ bool Application::UpgradeFirmwareUrl(const std::string& url, const std::string& 
     OtaUpgradeScreen::SetProgress(0);
 
     // 顶栏文案 + 提示音；进度改由全屏页展示（墨水屏 SetChatMessage 在非百问页无效）
-    Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download", Lang::Sounds::OGG_UPGRADE);
+    Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download");
     vTaskDelay(pdMS_TO_TICKS(800));  // 给墨水首帧局刷时间
 
     PowerPolicy::GetInstance().Acquire(PowerNeed::OtaDownload);
@@ -1405,7 +1606,7 @@ bool Application::UpgradeFirmwareUrl(const std::string& url, const std::string& 
         if (xiaozhi_voice_active_) {
             EnsureAudioServiceRunning();
         }
-        Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark", Lang::Sounds::OGG_EXCLAMATION);
+        Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark");
         vTaskDelay(pdMS_TO_TICKS(3000));
         return false;
     }
@@ -1423,7 +1624,7 @@ bool Application::UpgradeFirmwareUrl(const std::string& url, const std::string& 
         if (xiaozhi_voice_active_) {
             EnsureAudioServiceRunning();
         }
-        Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark", Lang::Sounds::OGG_EXCLAMATION);
+        Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark");
         vTaskDelay(pdMS_TO_TICKS(3000));
         return false;
     }
@@ -1462,11 +1663,11 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
         }
         // Set the chat state to wake word detected
         protocol_->SendWakeWordDetected(wake_word);
-        SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
+        SetListeningMode(chat_cloud::UsesXiaozhiProtocol() ? kListeningModeManualStop :
+                     (aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime));
 #else
-        SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
-        // Play the pop up sound to indicate the wake word is detected
-        audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+        SetListeningMode(chat_cloud::UsesXiaozhiProtocol() ? kListeningModeManualStop :
+                     (aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime));
 #endif
     } else if (device_state_ == kDeviceStateSpeaking) {
         Schedule([this]() {
@@ -1543,20 +1744,4 @@ void Application::SetAecMode(AecMode mode) {
             protocol_->CloseAudioChannel();
         }
     });
-}
-
-void Application::PlaySound(const std::string_view& sound) {
-    if (sound.empty()) {
-        return;
-    }
-    // AI 聊天会话内，或开机 OTA/配网阶段允许拉起音频播提示音
-    if (!audio_running_) {
-        if (xiaozhi_voice_active_ || ShouldAllowBootAudio()) {
-            EnsureAudioServiceRunning();
-        } else {
-            ESP_LOGD(TAG, "PlaySound skipped: audio not running outside Xiaozhi session");
-            return;
-        }
-    }
-    audio_service_.PlaySound(sound);
 }

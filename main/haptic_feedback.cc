@@ -14,7 +14,15 @@ namespace {
 constexpr const char* TAG = "Haptic";
 constexpr const char* kNvsNs = "display";
 constexpr const char* kNvsKey = "haptic";
+constexpr const char* kNvsIntensityKey = "haptic_lvl";
 constexpr bool kDefaultEnabled = true;
+constexpr int kIntensityWeak = 0; // 弱
+constexpr int kIntensityMedium = 1; // 中
+constexpr int kIntensityStrong = 2; // 强
+constexpr int kDefaultIntensity = kIntensityWeak;
+constexpr int kPulseMsWeak = 35; // 弱脉宽 ms
+constexpr int kPulseMsMedium = 50; // 中脉宽 ms
+constexpr int kPulseMsStrong = 70; // 强脉宽 ms
 
 // LVGL USER_1：标记已挂震动回调，避免重复 Attach 导致连震。
 constexpr lv_obj_flag_t kHapticBoundFlag = LV_OBJ_FLAG_USER_1;
@@ -29,6 +37,7 @@ struct HapticZone {
 };
 
 bool s_enabled = kDefaultEnabled;
+int s_intensity = kDefaultIntensity;
 bool s_ready = false;
 bool s_zone_early_pulse = true;  // 全屏遮罩时可关，避免下层热区误震
 // touch_feed 早震与 LVGL PRESSED 去重
@@ -39,19 +48,56 @@ HapticZone s_zones[kMaxZones]{};
 size_t s_zone_count = 0;
 portMUX_TYPE s_zone_mux = portMUX_INITIALIZER_UNLOCKED;
 
+int ClampIntensity(int intensity) {
+    if (intensity == kIntensityMedium || intensity == kIntensityStrong) {
+        return intensity;
+    }
+    return kIntensityWeak;
+}
+
+int PulseMsForIntensity(int intensity) {
+    switch (ClampIntensity(intensity)) {
+        case kIntensityMedium:
+            return kPulseMsMedium;
+        case kIntensityStrong:
+            return kPulseMsStrong;
+        default:
+            return kPulseMsWeak;
+    }
+}
+
 void LoadFromNvs() {
     Settings settings(kNvsNs, false);
     s_enabled = settings.GetBool(kNvsKey, kDefaultEnabled);
+    s_intensity = ClampIntensity(settings.GetInt(kNvsIntensityKey, kDefaultIntensity));
     s_ready = true;
-    ESP_LOGI(TAG, "nvs load haptic=%d", s_enabled ? 1 : 0);
+    ESP_LOGI(TAG, "nvs load haptic=%d intensity=%d (%dms)", s_enabled ? 1 : 0, s_intensity,
+             PulseMsForIntensity(s_intensity));
 }
 
-void PersistTask(void* arg) {
-    const bool enabled = (arg != nullptr);
+void EnsureReady() {
+    if (!s_ready) {
+        LoadFromNvs();
+    }
+}
+
+void PersistTask(void* /*arg*/) {
     Settings settings(kNvsNs, true);
-    settings.SetBool(kNvsKey, enabled);
-    ESP_LOGI(TAG, "nvs save haptic=%d", enabled ? 1 : 0);
+    settings.SetBool(kNvsKey, s_enabled);
+    settings.SetInt(kNvsIntensityKey, s_intensity);
+    ESP_LOGI(TAG, "nvs save haptic=%d intensity=%d", s_enabled ? 1 : 0, s_intensity);
     vTaskDelete(nullptr);
+}
+
+void SchedulePersist() {
+    // 与 card_style 同理：LVGL worker 栈在 PSRAM，禁止本任务直接写 NVS。
+    if (xTaskCreate(PersistTask, "haptic_nvs", 4096, nullptr, 5, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "xTaskCreate(haptic_nvs) failed");
+    }
+}
+
+void PulseNow() {
+    Board::GetInstance().PulseVibration(PulseMsForIntensity(s_intensity));
 }
 
 void WriteZoneCoords(HapticZone* z, lv_obj_t* obj) {
@@ -157,27 +203,38 @@ void OnPressFeedback(lv_event_t* e) {
 }  // namespace
 
 bool HapticIsEnabled(void) {
-    if (!s_ready) {
-        LoadFromNvs();
-    }
+    EnsureReady();
     return s_enabled;
 }
 
 void HapticSetEnabled(bool enabled) {
+    EnsureReady();
     s_enabled = enabled;
     s_ready = true;
-    // 与 card_style 同理：LVGL worker 栈在 PSRAM，禁止本任务直接写 NVS。
-    if (xTaskCreate(PersistTask, "haptic_nvs", 4096, enabled ? reinterpret_cast<void*>(1) : nullptr, 5,
-                    nullptr) != pdPASS) {
-        ESP_LOGE(TAG, "xTaskCreate(haptic_nvs) failed");
+    SchedulePersist();
+}
+
+int HapticGetIntensity(void) {
+    EnsureReady();
+    return s_intensity;
+}
+
+void HapticSetIntensity(int intensity) {
+    EnsureReady();
+    const int next = ClampIntensity(intensity);
+    if (s_intensity == next) {
+        return;
     }
+    s_intensity = next;
+    s_ready = true;
+    SchedulePersist();
 }
 
 void HapticPulseIfEnabled(void) {
     if (!HapticIsEnabled()) {
         return;
     }
-    Board::GetInstance().PulseVibration();
+    PulseNow();
 }
 
 void HapticBeginPress(void) {
@@ -193,7 +250,7 @@ void HapticPulseOnFingerDown(void) {
     if (!HapticIsEnabled()) {
         return;
     }
-    Board::GetInstance().PulseVibration();
+    PulseNow();
 }
 
 bool HapticTryPulseAtUiPoint(int16_t x, int16_t y) {

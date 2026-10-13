@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 
-// 设置 → 存储：内存卡状态/容量 + 模拟 U 盘开关
+/** @brief 构建设置→存储页（容量与模拟 U 盘） */
 void SettingsStorageTab_Build(lv_obj_t* page);
+/** @brief 重置存储页并关闭虚拟 U 盘 UI 通知 */
 void SettingsStorageTab_Reset();

@@ -27,28 +27,27 @@
 #include <freertos/idf_additions.h>
 #include <freertos/task.h>
 
-namespace {
 
-constexpr const char* TAG = "AsstBootPhoto";
+static constexpr const char* TAG = "AsstBootPhoto";
 /** JPEG→L8 + 可选 A2I1 cache；栈放 SPIRAM，避免内部 RAM 碎片导致偶发 create 失败 */
-constexpr uint32_t kWorkerStack = 16 * 1024;
-constexpr UBaseType_t kWorkerPrio = 5;
-constexpr BaseType_t kWorkerCore = 0;
+static constexpr uint32_t kWorkerStack = 16 * 1024;
+static constexpr UBaseType_t kWorkerPrio = 5;
+static constexpr BaseType_t kWorkerCore = 0;
 /** 对话区默认 Image 框；解码时再按此上限缩放。 */
-constexpr int kMaxImgW = 440;
-constexpr int kMaxImgH = 280;
+static constexpr int kMaxImgW = 440;
+static constexpr int kMaxImgH = 280;
 
-std::atomic<bool> s_busy{false};
-std::atomic<uint32_t> s_shot_seq{0};
+static std::atomic<bool> s_busy{false};
+static std::atomic<uint32_t> s_shot_seq{0};
 
-struct InsertMsg {
+struct AssistantBootInsertMsg {
     char* json = nullptr;
 };
 
 /** 失败路径自动清 busy；成功投递 LVGL 后 dismiss，由 OnInsertAsync 清。 */
-struct BusyGuard {
+struct AssistantBootBusyGuard {
     bool active = true;
-    ~BusyGuard() {
+    ~AssistantBootBusyGuard() {
         if (active) {
             s_busy.store(false, std::memory_order_release);
         }
@@ -56,10 +55,10 @@ struct BusyGuard {
     void Dismiss() { active = false; }
 };
 
-struct JpegOwner {
+struct AssistantBootJpegOwner {
     uint8_t* data = nullptr;
     size_t len = 0;
-    ~JpegOwner() {
+    ~AssistantBootJpegOwner() {
         if (data != nullptr) {
             free(data);
             data = nullptr;
@@ -68,11 +67,8 @@ struct JpegOwner {
     }
 };
 
-/**
- * 上传原始 JPEG 到 claw vision/upload（multipart file=）。
- * 软失败：网络差不影响本地插图。须在 Capture 已释放 USB 之后调用。
- */
-bool UploadOriginalJpeg(const uint8_t* jpeg, size_t jpeg_len) {
+// 上传原始 JPEG 到 claw vision/upload（multipart file=）。
+static bool UploadOriginalJpeg(const uint8_t* jpeg, size_t jpeg_len) {
     if (jpeg == nullptr || jpeg_len == 0) {
         return false;
     }
@@ -151,11 +147,7 @@ bool UploadOriginalJpeg(const uint8_t* jpeg, size_t jpeg_len) {
     return true;
 }
 
-/**
- * 统一用 mem:// + A2L8（L8 直显，与产测相机同源）。
- * 有 SD 时额外写 A2I1 cache，供 local 槽被挤掉后翻页回退。
- */
-bool PublishL8(const reader::RasterImage& raster, uint32_t seq, char* url_out, size_t url_cap) {
+static bool PublishL8(const reader::RasterImage& raster, uint32_t seq, char* url_out, size_t url_cap) {
     if (url_out == nullptr || url_cap < 32 || raster.empty()) {
         return false;
     }
@@ -185,7 +177,7 @@ bool PublishL8(const reader::RasterImage& raster, uint32_t seq, char* url_out, s
     return true;
 }
 
-char* BuildCapturingJson() {
+static char* BuildCapturingJson() {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr) {
         return nullptr;
@@ -251,7 +243,7 @@ char* BuildCapturingJson() {
     return raw;
 }
 
-char* BuildInsertJson(const char* image_url, int img_w, int img_h) {
+static char* BuildInsertJson(const char* image_url, int img_w, int img_h) {
     if (image_url == nullptr || image_url[0] == '\0') {
         return nullptr;
     }
@@ -316,8 +308,8 @@ char* BuildInsertJson(const char* image_url, int img_w, int img_h) {
     return raw;
 }
 
-void OnCapturingAsync(void* user_data) {
-    auto* msg = static_cast<InsertMsg*>(user_data);
+static void OnCapturingAsync(void* user_data) {
+    auto* msg = static_cast<AssistantBootInsertMsg*>(user_data);
     if (msg == nullptr) {
         return;
     }
@@ -330,8 +322,8 @@ void OnCapturingAsync(void* user_data) {
     delete msg;
 }
 
-void OnInsertAsync(void* user_data) {
-    auto* msg = static_cast<InsertMsg*>(user_data);
+static void OnInsertAsync(void* user_data) {
+    auto* msg = static_cast<AssistantBootInsertMsg*>(user_data);
     if (msg == nullptr) {
         s_busy.store(false, std::memory_order_release);
         return;
@@ -345,16 +337,16 @@ void OnInsertAsync(void* user_data) {
     s_busy.store(false, std::memory_order_release);
 }
 
-void PhotoWorker(void* /*arg*/) {
+static void PhotoWorker(void* /*arg*/) {
     {
-        BusyGuard busy;
+        AssistantBootBusyGuard busy;
 
         Camera* camera = Board::GetInstance().GetCamera();
         if (camera == nullptr) {
             ESP_LOGW(TAG, "no Camera");
         } else {
             // 唯一供电路径：UvcStillCamera::Capture（OTG on → P0.0 低 → 拍 → StopSession → OTG off）
-            JpegOwner jpeg;
+            AssistantBootJpegOwner jpeg;
             if (!camera->CaptureStillJpeg(&jpeg.data, &jpeg.len) || jpeg.data == nullptr ||
                 jpeg.len == 0) {
                 ESP_LOGW(TAG, "CaptureStillJpeg failed (no camera / busy / error)");
@@ -387,7 +379,7 @@ void PhotoWorker(void* /*arg*/) {
                             if (!AssistantScreen::IsActive()) {
                                 cJSON_free(json);
                             } else {
-                                auto* msg = new (std::nothrow) InsertMsg();
+                                auto* msg = new (std::nothrow) AssistantBootInsertMsg();
                                 if (msg == nullptr) {
                                     cJSON_free(json);
                                 } else {
@@ -411,7 +403,6 @@ void PhotoWorker(void* /*arg*/) {
     vTaskDeleteWithCaps(nullptr);
 }
 
-}  // namespace
 
 bool AssistantBootPhoto_OnDoubleClick() {
     if (!AssistantScreen::IsActive()) {
@@ -438,7 +429,7 @@ bool AssistantBootPhoto_OnDoubleClick() {
     // 先发「用户：拍照中」，再起拍照 worker（其余逻辑不变）
     char* capturing_json = BuildCapturingJson();
     if (capturing_json != nullptr) {
-        auto* msg = new (std::nothrow) InsertMsg();
+        auto* msg = new (std::nothrow) AssistantBootInsertMsg();
         if (msg == nullptr) {
             cJSON_free(capturing_json);
         } else {

@@ -22,14 +22,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestTab";
+static constexpr const char* TAG = "SettingsTestTab";
 /** 产测入口：信号刷新周期。4G 走 AT+CSQ，不宜过密以免与其它 AT 抢 modem mutex。 */
-constexpr uint32_t kSignalPollMs = 2000;
-constexpr lv_coord_t kSignalPanelH = 56;
-constexpr lv_coord_t kSignalTitleW = 120;
-constexpr size_t kSignalTextMax = 48;
+static constexpr uint32_t kSignalPollMs = 2000;
+static constexpr lv_coord_t kSignalPanelH = 56;
+static constexpr lv_coord_t kSignalTitleW = 120;
+static constexpr size_t kSignalTextMax = 48;
 
 /**
  * 测试 Tab 信号条：与自动测试页 SettingsTestUi 生命周期解耦。
@@ -43,46 +42,45 @@ constexpr size_t kSignalTextMax = 48;
  * - 离 Tab / Reset 先停表、抬 generation、清 alive，丢弃迟到的 async，避免写已删控件
  * - sample_busy 保证同时最多一个采样任务，失败路径必须清 busy，防卡死
  */
-struct SignalUiMsg {
+struct SettingsTestSignalUiMsg {
     uint32_t generation = 0;
     char text[kSignalTextMax] = {};
 };
 
-lv_obj_t* s_signal_value = nullptr;
-lv_timer_t* s_signal_timer = nullptr;
-std::atomic<bool> s_signal_alive{false};
-std::atomic<uint32_t> s_signal_generation{0};
-std::atomic<bool> s_signal_busy{false};
-char s_last_signal_text[kSignalTextMax] = {};
+static lv_obj_t* s_signal_value = nullptr;
+static lv_timer_t* s_signal_timer = nullptr;
+static std::atomic<bool> s_signal_alive{false};
+static std::atomic<uint32_t> s_signal_generation{0};
+static std::atomic<bool> s_signal_busy{false};
+static char s_last_signal_text[kSignalTextMax] = {};
 
-void OnAutoTestClicked(lv_event_t* /*e*/) {
+static void OnAutoTestClicked(lv_event_t* /*e*/) {
     ESP_LOGI(TAG, "open auto test screen");
     ScreenNavigateTo(SettingsTestAutoScreen::Create);
 }
-
-void OnTouchTestClicked(lv_event_t* /*e*/) {
+static void OnTouchTestClicked(lv_event_t* /*e*/) {
     ESP_LOGI(TAG, "open touch test screen");
     ScreenNavigateTo(SettingsTestTouchScreen::Create);
 }
 
-void OnBatteryTestClicked(lv_event_t* /*e*/) {
+static void OnBatteryTestClicked(lv_event_t* /*e*/) {
     ESP_LOGI(TAG, "open battery test screen");
     ScreenNavigateTo(SettingsTestBatteryScreen::Create);
 }
 
-void OnAgingTestClicked(lv_event_t* /*e*/) {
+static void OnAgingTestClicked(lv_event_t* /*e*/) {
     ESP_LOGI(TAG, "open aging test screen");
     ScreenNavigateTo(SettingsTestAgingScreen::Create);
 }
 
-void StopSignalTimer() {
+static void StopSignalTimer() {
     if (s_signal_timer != nullptr) {
         lv_timer_delete(s_signal_timer);
         s_signal_timer = nullptr;
     }
 }
 
-void InvalidateSignalSession() {
+static void InvalidateSignalSession() {
     s_signal_alive.store(false, std::memory_order_release);
     s_signal_generation.fetch_add(1, std::memory_order_acq_rel);
     StopSignalTimer();
@@ -90,7 +88,7 @@ void InvalidateSignalSession() {
     s_last_signal_text[0] = '\0';
 }
 
-void FormatWifiSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) {
+static void FormatWifiSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) {
     auto& wifi = WifiStation::GetInstance();
     if (!wifi.IsConnected()) {
         std::snprintf(ui, ui_len, "%s", Lang::Strings::SETTINGS_TEST_SIGNAL_WIFI_DISCONNECTED);
@@ -111,7 +109,7 @@ void FormatWifiSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) 
     std::snprintf(serial, serial_len, "@@@信号  | 网络: WiFi | RSSI: %d dBm", rssi);
 }
 
-void FormatCellSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) {
+static void FormatCellSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) {
     Nt26Board* nt26 = SettingsTest_GetNt26Board();
     if (nt26 == nullptr) {
         std::snprintf(ui, ui_len, "%s", Lang::Strings::SETTINGS_TEST_SIGNAL_CELL_UNAVAIL);
@@ -131,7 +129,7 @@ void FormatCellSignal(char* ui, size_t ui_len, char* serial, size_t serial_len) 
     std::snprintf(serial, serial_len, "@@@信号  | 网络: 4G | CSQ: %2d", csq);
 }
 
-void SampleSignalText(char* ui, size_t ui_len, char* serial, size_t serial_len) {
+static void SampleSignalText(char* ui, size_t ui_len, char* serial, size_t serial_len) {
     DualNetworkBoard* dual = SettingsTest_GetDualBoard();
     if (dual == nullptr) {
         std::snprintf(ui, ui_len, "%s", Lang::Strings::SETTINGS_TEST_SIGNAL_BOARD_UNSUP);
@@ -146,8 +144,8 @@ void SampleSignalText(char* ui, size_t ui_len, char* serial, size_t serial_len) 
     }
 }
 
-void ApplySignalUi(void* p) {
-    auto* msg = static_cast<SignalUiMsg*>(p);
+static void ApplySignalUi(void* p) {
+    auto* msg = static_cast<SettingsTestSignalUiMsg*>(p);
     if (msg == nullptr) {
         return;
     }
@@ -165,13 +163,13 @@ void ApplySignalUi(void* p) {
     delete msg;
 }
 
-void SignalSampleTask(void* /*arg*/) {
+static void SignalSampleTask(void* /*arg*/) {
     const uint32_t gen = s_signal_generation.load(std::memory_order_acquire);
 
     char ui[kSignalTextMax] = {};
     char serial[80] = {};
     SampleSignalText(ui, sizeof(ui), serial, sizeof(serial));
-    ESP_LOGI(TAG, "%s", serial);
+    ESP_LOGD(TAG, "%s", serial);
 
     if (!s_signal_alive.load(std::memory_order_acquire) ||
         gen != s_signal_generation.load(std::memory_order_acquire)) {
@@ -180,7 +178,7 @@ void SignalSampleTask(void* /*arg*/) {
         return;
     }
 
-    auto* msg = new (std::nothrow) SignalUiMsg{};
+    auto* msg = new (std::nothrow) SettingsTestSignalUiMsg{};
     if (msg == nullptr) {
         ESP_LOGW(TAG, "signal ui msg alloc failed");
         s_signal_busy.store(false, std::memory_order_release);
@@ -200,7 +198,7 @@ void SignalSampleTask(void* /*arg*/) {
     vTaskDelete(nullptr);
 }
 
-void KickSignalSample() {
+static void KickSignalSample() {
     if (!s_signal_alive.load(std::memory_order_acquire)) {
         return;
     }
@@ -216,11 +214,11 @@ void KickSignalSample() {
     }
 }
 
-void OnSignalPollTimer(lv_timer_t* /*t*/) {
+static void OnSignalPollTimer(lv_timer_t* /*t*/) {
     KickSignalSample();
 }
 
-lv_obj_t* CreateSignalPanel(lv_obj_t* page) {
+static lv_obj_t* CreateSignalPanel(lv_obj_t* page) {
     lv_obj_t* row = lv_obj_create(page);
     lv_obj_remove_style_all(row);
     lv_obj_set_width(row, lv_pct(100));
@@ -257,7 +255,6 @@ lv_obj_t* CreateSignalPanel(lv_obj_t* page) {
     return value;
 }
 
-}  // namespace
 
 void SettingsTestTab_Reset() {
     InvalidateSignalSession();

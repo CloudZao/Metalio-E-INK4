@@ -20,9 +20,13 @@ HttpClient::~HttpClient() {
     eof_ = true;
     write_cv_.notify_all();
     cv_.notify_all();
-    if (tcp_) {
-        tcp_->Disconnect();
-        tcp_.reset();
+    std::shared_ptr<Tcp> tcp;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tcp = std::move(tcp_);
+    }
+    if (tcp) {
+        tcp->Disconnect();
     }
     if (event_group_handle_ != nullptr) {
         vEventGroupDelete(event_group_handle_);
@@ -195,36 +199,46 @@ bool HttpClient::Open(const std::string& method, const std::string& url) {
         ResetRequestState();
     } else {
         // 旧连接即使已被对端关掉，也要 join 接收任务，再换新的 Tcp 对象
-        if (tcp_) {
+        std::shared_ptr<Tcp> prev;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            prev = std::move(tcp_);
+        }
+        if (prev) {
             ESP_LOGD(TAG, "Closing previous connection (host or port changed, or connection not reusable)");
             connected_ = false;
             write_cv_.notify_all();
             cv_.notify_all();
-            tcp_->Disconnect();
+            prev->Disconnect();
         }
         
         // 重置所有状态（不会清空 content_）
         ResetRequestState();
         
-        // 建立新的 TCP 连接
+        // 建立新的 TCP 连接（shared_ptr：Open 本地钉住，Close 并发 reset 成员不踩 Connect）
+        std::shared_ptr<Tcp> tcp;
         if (protocol_ == "https") {
-            tcp_ = network_->CreateSsl(connect_id_);
+            tcp = std::shared_ptr<Tcp>(network_->CreateSsl(connect_id_));
         } else {
-            tcp_ = network_->CreateTcp(connect_id_);
+            tcp = std::shared_ptr<Tcp>(network_->CreateTcp(connect_id_));
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            tcp_ = tcp;
         }
 
         // 设置 TCP 数据接收回调
-        tcp_->OnStream([this](const std::string& data) {
+        tcp->OnStream([this](const std::string& data) {
             OnTcpData(data);
         });
 
         // 设置 TCP 断开连接回调
-        tcp_->OnDisconnected([this]() {
+        tcp->OnDisconnected([this]() {
             OnTcpDisconnected();
         });
         
-        if (!tcp_->Connect(host_, port_)) {
-            last_error_ = tcp_->GetLastError();
+        if (!tcp->Connect(host_, port_)) {
+            last_error_ = tcp->GetLastError();
             ESP_LOGE(TAG, "TCP connection failed, code=0x%x", last_error_);
             return false;
         }
@@ -237,12 +251,15 @@ bool HttpClient::Open(const std::string& method, const std::string& url) {
 
     // 构建并发送 HTTP 请求
     std::string http_request = BuildHttpRequest();
-    if (tcp_->Send(http_request) <= 0) {
+    std::shared_ptr<Tcp> tcp = tcp_;
+    if (tcp == nullptr || tcp->Send(http_request) <= 0) {
         ESP_LOGE(TAG, "Send HTTP request failed");
         connected_ = false;
         write_cv_.notify_all();
         cv_.notify_all();
-        tcp_->Disconnect();
+        if (tcp != nullptr) {
+            tcp->Disconnect();
+        }
         return false;
     }
 
@@ -259,11 +276,15 @@ void HttpClient::Close() {
     eof_ = true;
     write_cv_.notify_all();
     cv_.notify_all();
-    if (tcp_) {
-        // 必须 join：connected_ 为 false 只表示对端已关，接收任务可能还在回调里
-        tcp_->Disconnect();
-        tcp_.reset();  // 避免析构再 Disconnect 一次
-        ESP_LOGI(TAG, "HTTP connection closed");
+    // 移出成员再 Disconnect：Open 若正持有同一 shared_ptr 钉住 Connect，此处不会析构 Tcp
+    std::shared_ptr<Tcp> tcp;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tcp = std::move(tcp_);
+    }
+    if (tcp) {
+        tcp->Disconnect();
+        ESP_LOGD(TAG, "HTTP connection closed");
     }
 }
 

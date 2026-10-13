@@ -313,7 +313,7 @@ bool ScanNearbyAps(std::vector<ApItem>& out) {
     }
     heap_caps_free(records);
 
-    ESP_LOGI(TAG, "scan ok ap_raw=%u kept=%u", static_cast<unsigned>(got),
+    ESP_LOGD(TAG, "scan ok ap_raw=%u kept=%u", static_cast<unsigned>(got),
              static_cast<unsigned>(out.size()));
     return true;
 }
@@ -395,12 +395,12 @@ void PostLocation(const std::string& body) {
     api::LogHttpResponse(TAG, status, api::RedactClawUrlsForLog(resp));
 
     // 按需求：不做业务解析，整段 JSON 打出来即可
-    ESP_LOGI(TAG, "location status=%d json=%s", status, resp.empty() ? "(empty)" : resp.c_str());
+    ESP_LOGD(TAG, "location status=%d json=%s", status, resp.empty() ? "(empty)" : resp.c_str());
 }
 
 void WorkerTask(void* /*arg*/) {
     {
-        ESP_LOGI(TAG, "boot wifi-location start");
+        ESP_LOGD(TAG, "boot wifi-location start");
 
         if (!CanReportNow()) {
             ESP_LOGW(TAG, "skip: not ready (config_mode or offline)");

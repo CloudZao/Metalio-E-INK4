@@ -12,37 +12,36 @@
 #include <esp_random.h>
 #include "fontpack_lvgl.h"
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestTouch";
-constexpr const char* kScreenId = "settings_test_touch";
+static constexpr const char* TAG = "SettingsTestTouch";
+static constexpr const char* kScreenId = "settings_test_touch";
 
 // 与 debug_tp TouchTestScreen 一致：准星几何 + 固定 10 点后进入随机
-constexpr lv_coord_t kTargetHit = 64;    // 点击热区边长
-constexpr lv_coord_t kRingSize = 48;     // 外环直径
-constexpr lv_coord_t kCrossLen = 56;     // 十字臂长
-constexpr lv_coord_t kCrossThick = 2;    // 十字线宽
-constexpr lv_coord_t kCoreSize = 10;     // 中心实心点
-constexpr lv_coord_t kCoreClear = 16;    // 中心留白
-constexpr lv_coord_t kEdgeInset = 48;    // 左右/上边距
-constexpr lv_coord_t kBottomInset = 96;  // 底排上移，序号不被挡住
-constexpr lv_coord_t kCenterGap = 70;    // 中心两点左右间距的一半
-constexpr int kFixedCount = 10;
+static constexpr lv_coord_t kTargetHit = 64;    // 点击热区边长
+static constexpr lv_coord_t kRingSize = 48;     // 外环直径
+static constexpr lv_coord_t kCrossLen = 56;     // 十字臂长
+static constexpr lv_coord_t kCrossThick = 2;    // 十字线宽
+static constexpr lv_coord_t kCoreSize = 10;     // 中心实心点
+static constexpr lv_coord_t kCoreClear = 16;    // 中心留白
+static constexpr lv_coord_t kEdgeInset = 48;    // 左右/上边距
+static constexpr lv_coord_t kBottomInset = 96;  // 底排上移，序号不被挡住
+static constexpr lv_coord_t kCenterGap = 70;    // 中心两点左右间距的一半
+static constexpr int kFixedCount = 10;
 
-lv_obj_t* s_scr = nullptr;
-lv_obj_t* s_field = nullptr;
-lv_obj_t* s_start_lbl = nullptr;
-int s_remaining = 0;
-bool s_random_mode = false;
-bool s_testing = false;
+static lv_obj_t* s_scr = nullptr;
+static lv_obj_t* s_field = nullptr;
+static lv_obj_t* s_start_lbl = nullptr;
+static int s_remaining = 0;
+static bool s_random_mode = false;
+static bool s_testing = false;
 
-void ClearStatusBindings() {
+static void ClearStatusBindings() {
     if (auto* disp = LVAdapterDisplay::Instance()) {
         disp->BindStatusWidgets(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     }
 }
 
-lv_obj_t* MakeBar(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
+static lv_obj_t* MakeBar(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
     lv_obj_t* bar = lv_obj_create(parent);
     lv_obj_remove_style_all(bar);
     lv_obj_set_size(bar, w, h);
@@ -53,9 +52,9 @@ lv_obj_t* MakeBar(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
     return bar;
 }
 
-void SpawnTarget(lv_coord_t cx, lv_coord_t cy, int index);
+static void SpawnTarget(lv_coord_t cx, lv_coord_t cy, int index);
 
-void SpawnRandomTarget() {
+static void SpawnRandomTarget() {
     if (s_field == nullptr || !lv_obj_is_valid(s_field)) {
         return;
     }
@@ -73,7 +72,7 @@ void SpawnRandomTarget() {
     SpawnTarget(rx, ry, 0);
 }
 
-void OnTargetClicked(lv_event_t* e) {
+static void OnTargetClicked(lv_event_t* e) {
     lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     while (target != nullptr && target != s_field && lv_obj_get_parent(target) != s_field) {
         target = lv_obj_get_parent(target);
@@ -92,7 +91,7 @@ void OnTargetClicked(lv_event_t* e) {
         if (s_remaining > 0) {
             --s_remaining;
         }
-        ESP_LOGI(TAG, "fixed remaining=%d", s_remaining);
+        ESP_LOGD(TAG, "fixed remaining=%d", s_remaining);
         if (s_remaining == 0) {
             s_random_mode = true;
             ESP_LOGI(TAG, "enter random mode");
@@ -104,7 +103,7 @@ void OnTargetClicked(lv_event_t* e) {
     SpawnRandomTarget();
 }
 
-void SpawnTarget(lv_coord_t cx, lv_coord_t cy, int index) {
+static void SpawnTarget(lv_coord_t cx, lv_coord_t cy, int index) {
     if (s_field == nullptr || !lv_obj_is_valid(s_field)) {
         return;
     }
@@ -175,7 +174,7 @@ void SpawnTarget(lv_coord_t cx, lv_coord_t cy, int index) {
     lv_obj_add_event_cb(t, OnTargetClicked, LV_EVENT_CLICKED, nullptr);
 }
 
-void SpawnFixedSymmetric() {
+static void SpawnFixedSymmetric() {
     if (s_field == nullptr) {
         return;
     }
@@ -203,10 +202,10 @@ void SpawnFixedSymmetric() {
     }
     s_remaining = kFixedCount;
     s_random_mode = false;
-    ESP_LOGI(TAG, "fullscreen %dx%d fixed=%d", static_cast<int>(w), static_cast<int>(h), kFixedCount);
+    ESP_LOGD(TAG, "fullscreen %dx%d fixed=%d", static_cast<int>(w), static_cast<int>(h), kFixedCount);
 }
 
-void StartTesting() {
+static void StartTesting() {
     if (s_testing || s_scr == nullptr || !lv_obj_is_valid(s_scr)) {
         return;
     }
@@ -232,7 +231,7 @@ void StartTesting() {
     SpawnFixedSymmetric();
 }
 
-void OnStartClicked(lv_event_t* /*e*/) {
+static void OnStartClicked(lv_event_t* /*e*/) {
     if (s_testing) {
         return;
     }
@@ -240,7 +239,7 @@ void OnStartClicked(lv_event_t* /*e*/) {
     StartTesting();
 }
 
-void OnDeleted(lv_event_t* e) {
+static void OnDeleted(lv_event_t* e) {
     if (lv_event_get_target(e) != s_scr) {
         return;
     }
@@ -252,7 +251,6 @@ void OnDeleted(lv_event_t* e) {
     s_testing = false;
 }
 
-}  // namespace
 
 lv_obj_t* SettingsTestTouchScreen::Create() {
     ESP_LOGI(TAG, "create touch test screen");

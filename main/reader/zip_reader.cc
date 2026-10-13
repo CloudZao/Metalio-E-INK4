@@ -175,7 +175,7 @@ bool ZipReader::LoadCentralDirectory() {
     }
 
     cd_loaded_ = true;
-    ESP_LOGI(TAG, "loaded %u entries from %s", static_cast<unsigned>(entries_.size()), path_.c_str());
+    ESP_LOGD(TAG, "loaded %u entries from %s", static_cast<unsigned>(entries_.size()), path_.c_str());
     return !entries_.empty();
 }
 
@@ -397,7 +397,7 @@ bool ZipReader::OpenEntryStream(const char* name) {
     }
 
     stream_open_ = true;
-    ESP_LOGI(TAG, "stream open %s uncomp=%u method=%u", name, static_cast<unsigned>(e.uncomp_size),
+    ESP_LOGD(TAG, "stream open %s uncomp=%u method=%u", name, static_cast<unsigned>(e.uncomp_size),
              e.method);
     return true;
 }

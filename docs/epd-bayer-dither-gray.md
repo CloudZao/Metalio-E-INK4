@@ -1,5 +1,7 @@
 # 墨水屏网点模拟灰色背景
 
+> **阅读抗锯齿已改为真 4 灰**（`epd_gray_aa` + `epd_lut_4gray` + `SSD1677_EPAPER_REFRESH_GRAY`）。本文仅描述首页卡片等仍用 Bayer 网点模拟浅灰底的路径。
+
 本文说明首页应用卡片如何用 **Bayer 有序抖动（网点）** 在 **1bpp / I1** 墨水屏链路上模拟浅灰底，而不启用真 4 灰阶 LUT。
 
 实现位置：`main/display/screen/home_screen/home_screen.cc`（`GrayDitherImg()` + `kBayerThreshold`）。

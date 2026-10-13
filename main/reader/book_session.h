@@ -234,7 +234,8 @@ private:
     void NoteChapterPageCount(int chapter, int pages);
     bool LoadEpubChapter(int chapter);
     bool LoadEbookChapter(int chapter);
-    bool PaginateTextBlock(const std::string& text, std::vector<Page>& pages, Page& cur, lv_coord_t& y);
+    bool PaginateTextBlock(const std::string& text, std::vector<Page>& pages, Page& cur, lv_coord_t& y,
+                           bool chapter_title = false);
     bool StreamPaginateTxt(FILE* fp, size_t file_size);
     void MaterializeTxtPage(int page) const;
     void ClearTxtIndex();

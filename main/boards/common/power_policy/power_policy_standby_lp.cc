@@ -5,6 +5,8 @@
 
 #include "config.h"
 #include <esp_lv_adapter.h>
+#include <esp_lvgl_port.h>
+#include <esp_timer.h>
 
 #include <driver/gpio.h>
 #include <iot_button.h>
@@ -31,6 +33,7 @@ void LvAsyncCallLocked(lv_async_cb_t cb, void* user_data)
         ESP_LOGW(TAG, "lv_async skipped: adapter not init");
         return;
     }
+    PowerPolicy::DebugSetLpPhase("lv_lock");
     if (esp_lv_adapter_lock(-1) != ESP_OK) {
         ESP_LOGW(TAG, "lv_async skipped: adapter lock failed");
         return;
@@ -39,6 +42,7 @@ void LvAsyncCallLocked(lv_async_cb_t cb, void* user_data)
         ESP_LOGW(TAG, "lv_async_call failed");
     }
     esp_lv_adapter_unlock();
+    PowerPolicy::DebugSetLpPhase("lv_done");
 }
 
 int MeasureGpioHoldMs(gpio_num_t gpio)
@@ -73,7 +77,7 @@ bool RunStandbyBootKeyGesture(int held_ms)
         return true;
     }
     // 短按不退出待机；浅睡会被 GPIO 短暂唤醒，量完后继续睡
-    ESP_LOGI(TAG, "BOOT standby short %d ms -> stay LP", held_ms);
+    ESP_LOGD(TAG, "BOOT standby short %d ms -> stay LP", held_ms);
     return false;
 }
 
@@ -96,6 +100,17 @@ void RunStandbyPowerKeyGesture(int held_ms)
     }
 }
 
+bool DispatchStandbyPowerKey(int held_ms)
+{
+    xSemaphoreTake(pwr::mu, portMAX_DELAY);
+    pwr::WakeTouchLocked();
+    pwr::ResetStandbyElapsedLocked();
+    pwr::last_user_activity_us = esp_timer_get_time();
+    xSemaphoreGive(pwr::mu);
+    RunStandbyPowerKeyGesture(held_ms);
+    return true;
+}
+
 bool PollStandbyPhysicalKeys()
 {
     const bool boot_held = (gpio_get_level(BOOT_BUTTON_GPIO) == 0);
@@ -103,17 +118,44 @@ bool PollStandbyPhysicalKeys()
     if (!boot_held && !power_held) {
         return false;
     }
-    ESP_LOGI(TAG, "standby key boot=%d power=%d", boot_held ? 1 : 0, power_held ? 1 : 0);
+    PowerPolicy::DebugSetLpPhase("key_hold");
+    ESP_LOGD(TAG, "standby key boot=%d power=%d", boot_held ? 1 : 0, power_held ? 1 : 0);
     if (boot_held) {
         return RunStandbyBootKeyGesture(MeasureGpioHoldMs(BOOT_BUTTON_GPIO));
     }
-    xSemaphoreTake(pwr::mu, portMAX_DELAY);
-    pwr::WakeTouchLocked();
-    pwr::ResetStandbyElapsedLocked();
-    pwr::last_user_activity_us = esp_timer_get_time();
-    xSemaphoreGive(pwr::mu);
-    RunStandbyPowerKeyGesture(MeasureGpioHoldMs(POWER_BUTTON_GPIO));
-    return true;
+    return DispatchStandbyPowerKey(MeasureGpioHoldMs(POWER_BUTTON_GPIO));
+}
+
+/**
+ * 浅睡 GPIO 醒：唤醒源仅 POWER。短按常在读脚前已松开，仍按 POWER 短按 dismiss。
+ * @return true 结束本轮 LP；false 继续浅睡（本路径对 POWER 唤醒应恒为 true）
+ */
+bool HandleGpioWakeFromLightSleep()
+{
+    PowerPolicy::DebugSetLpPhase("gpio_wake");
+    bool latch_boot = false;
+    bool latch_power = false;
+    power_hw_gpio_wake_latch_get(&latch_boot, &latch_power);
+    (void)latch_boot;
+    bool saw_power = latch_power || (gpio_get_level(POWER_BUTTON_GPIO) == 0);
+
+    constexpr int kGraceMs = 300;
+    constexpr int kStepMs = 10;
+    for (int waited = 0; !saw_power && waited < kGraceMs; waited += kStepMs) {
+        vTaskDelay(pdMS_TO_TICKS(kStepMs));
+        saw_power = (gpio_get_level(POWER_BUTTON_GPIO) == 0);
+    }
+
+    ESP_LOGD(TAG, "GPIO wake (POWER) latch_power=%d", saw_power ? 1 : 0);
+
+    if (saw_power) {
+        const int held =
+            (gpio_get_level(POWER_BUTTON_GPIO) == 0) ? MeasureGpioHoldMs(POWER_BUTTON_GPIO) : 0;
+        return DispatchStandbyPowerKey(held);
+    }
+    // 脚已松开：仍是 POWER 唤醒事件 → 短按 dismiss
+    ESP_LOGD(TAG, "GPIO wake POWER released -> short dismiss");
+    return DispatchStandbyPowerKey(0);
 }
 
 bool DelayMsWithStandbyKeyPoll(uint32_t delay_ms)
@@ -133,6 +175,7 @@ bool DelayMsWithStandbyKeyPoll(uint32_t delay_ms)
 /** 攒帧 defer：壁纸解码完即 Park，勿盲等 kStandbyUiSettleMs；经典页最短 80ms 布局。 */
 bool WaitStandbyPaintReady()
 {
+    PowerPolicy::DebugSetLpPhase("paint");
     constexpr uint32_t kMinMs = 80;
     constexpr uint32_t kStepMs = 50;
     uint32_t elapsed_ms = 0;
@@ -162,7 +205,8 @@ void ResumeIotKeys()
         return;
     }
     iot_keys_suspended = false;
-    ESP_LOGI(TAG, "iot keys resumed");
+    PowerPolicy::DebugSetIotSuspended(false);
+    ESP_LOGD(TAG, "iot keys resumed");
 }
 
 void ResumeIotKeysAsync(void* /*arg*/)
@@ -181,11 +225,13 @@ void SuspendIotKeys()
         return;
     }
     iot_keys_suspended = true;
-    ESP_LOGI(TAG, "iot keys suspended for standby LP");
+    PowerPolicy::DebugSetIotSuspended(true);
+    ESP_LOGD(TAG, "iot keys suspended for standby LP");
 }
 
 int64_t StandbyUiRemainUsLocked()
 {
+    // 永不：仍按 60s 切片定时醒（勿返回 0，否则浅睡无 timer 仅靠 GPIO）
     if (pwr::standby_to_shutdown_sec <= 0) {
         return static_cast<int64_t>(pwr::kLightSleepSliceUs);
     }
@@ -220,6 +266,7 @@ bool RunLightSleepSlice()
     const int64_t remain_us = StandbyUiRemainUsLocked();
     xSemaphoreGive(pwr::mu);
 
+    // 按剩余时间切片（上限 kLightSleepSliceUs）；永不亦走此上限，保证 60s 定时醒
     uint64_t slice = static_cast<uint64_t>(remain_us);
     if (slice > pwr::kLightSleepSliceUs) {
         slice = pwr::kLightSleepSliceUs;
@@ -232,12 +279,16 @@ bool RunLightSleepSlice()
     CloseStandbyAwakeSegmentLocked();
     xSemaphoreGive(pwr::mu);
 
+    ESP_LOGD(TAG, "LP slice enter light sleep max_us=%llu",
+             static_cast<unsigned long long>(slice));
+    PowerPolicy::DebugSetLpPhase("pre_sleep");
     power_hw_light_sleep_once(slice);
+    PowerPolicy::DebugSetLpPhase("post_sleep");
 
     const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    ESP_LOGD(TAG, "LP slice wake cause=%d", static_cast<int>(cause));
     if (cause == ESP_SLEEP_WAKEUP_GPIO) {
-        ESP_LOGI(TAG, "GPIO wake");
-        if (PollStandbyPhysicalKeys()) {
+        if (HandleGpioWakeFromLightSleep()) {
             return true;
         }
         // BOOT 短按等「醒一下又继续睡」：补回 awake 段，避免漏计待机时长
@@ -253,7 +304,7 @@ bool RunLightSleepSlice()
         xSemaphoreGive(pwr::mu);
         return false;
     }
-    ESP_LOGW(TAG, "light sleep wake cause=%d, skip slice", static_cast<int>(cause));
+    ESP_LOGD(TAG, "light sleep wake cause=%d, skip slice", static_cast<int>(cause));
     xSemaphoreTake(pwr::mu, portMAX_DELAY);
     OpenStandbyAwakeSegmentLocked();
     xSemaphoreGive(pwr::mu);
@@ -263,6 +314,7 @@ bool RunLightSleepSlice()
 
 bool RunDelaySlice()
 {
+    PowerPolicy::DebugSetLpPhase("delay");
     xSemaphoreTake(pwr::mu, portMAX_DELAY);
     const int64_t remain_us = StandbyUiRemainUsLocked();
     const int64_t elapsed_s =
@@ -271,6 +323,7 @@ bool RunDelaySlice()
         1000000;
     xSemaphoreGive(pwr::mu);
 
+    // 永不：StandbyUiRemainUsLocked 已返回 60s 切片，勿无限 delay
     uint64_t slice = static_cast<uint64_t>(remain_us);
     if (slice > pwr::kLightSleepSliceUs) {
         slice = pwr::kLightSleepSliceUs;
@@ -279,7 +332,7 @@ bool RunDelaySlice()
         slice = 1000;
     }
     const uint32_t delay_ms = static_cast<uint32_t>(slice / 1000 > 0 ? slice / 1000 : 1);
-    ESP_LOGI(TAG, "LP slice delay %lu ms (light sleep off, elapsed %ld s)",
+    ESP_LOGD(TAG, "LP slice delay %lu ms (light sleep off, elapsed %ld s)",
              static_cast<unsigned long>(delay_ms), static_cast<long>(elapsed_s));
     return DelayMsWithStandbyKeyPoll(delay_ms);
 }
@@ -306,6 +359,7 @@ bool StandbyLpShouldContinue()
 bool RunStandbyLpMainLoop()
 {
     for (;;) {
+        PowerPolicy::DebugSetLpPhase("lp_loop");
         if (!StandbyLpShouldContinue()) {
             return false;
         }
@@ -332,11 +386,14 @@ bool RunStandbyLpMainLoop()
 void StandbyLpTask(void* /*arg*/)
 {
     for (;;) {
+        PowerPolicy::DebugSetLpPhase("wait_notify");
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        PowerPolicy::DebugSetLpPhase("session");
         ESP_LOGI(TAG, "standby LP session start");
 
         int waited_ms = 0;
         while (!StandbyScreen::IsActive() && waited_ms < 8000) {
+            PowerPolicy::DebugSetLpPhase("wait_ui");
             vTaskDelay(pdMS_TO_TICKS(50));
             waited_ms += 50;
         }
@@ -353,6 +410,7 @@ void StandbyLpTask(void* /*arg*/)
         }
 
         // 进待机第一件事：触摸深睡（待机靠 BOOT/POWER；勿等全刷后再睡）
+        PowerPolicy::DebugSetLpPhase("touch_slp");
         xSemaphoreTake(pwr::mu, portMAX_DELAY);
         pwr::EnsureTouchSleepLocked();
         xSemaphoreGive(pwr::mu);
@@ -363,6 +421,7 @@ void StandbyLpTask(void* /*arg*/)
 
         const bool key_in_settle = WaitStandbyPaintReady();
         if (!key_in_settle) {
+            PowerPolicy::DebugSetLpPhase("epd_park");
             // settle 攒帧完毕：全刷待机画面后冻结 flush
             StandbyScreen::EnterEpdSleep();
             RunStandbyLpMainLoop();
@@ -379,6 +438,7 @@ void StandbyLpTask(void* /*arg*/)
         pwr::lp_session_active = false;
         xSemaphoreGive(pwr::mu);
         ESP_LOGI(TAG, "standby LP session end");
+        PowerPolicy::DebugSetLpPhase("ses_end");
     }
 }
 
@@ -393,7 +453,7 @@ void EnsureTouchSleepLocked()
     }
     if (board->TouchEnterSleep() == ESP_OK) {
         touch_asleep = true;
-        ESP_LOGI(TAG, "touch sleep for standby LP");
+        ESP_LOGD(TAG, "touch sleep for standby LP");
     }
 }
 
@@ -447,11 +507,14 @@ void DismissStandbyOverlayAsync(void* /*arg*/)
 
 void RequestDismissStandbyOverlay()
 {
+    PowerPolicy::DebugSetLpPhase("dismiss");
     xSemaphoreTake(mu, portMAX_DELAY);
     PrepareStandbyWakeExitLocked();
     last_user_activity_us = esp_timer_get_time();
     xSemaphoreGive(mu);
     LvAsyncCallLocked(DismissStandbyOverlayAsync, nullptr);
+    // 尽快唤醒 taskLVGL 处理 dismiss async，勿等 LVGL tick 补跑堆完
+    lvgl_port_task_wake(LVGL_PORT_EVENT_USER, nullptr);
 }
 
 void RequestStandbyUiAsync()
@@ -485,7 +548,20 @@ void ResumeIotKeysIfNeeded()
 
 void ArmStandbyLpTaskLocked()
 {
-    if (lp_task == nullptr || lp_session_active || shutdown_requested || standby_wake_exit) {
+    if (lp_task == nullptr) {
+        ESP_LOGW(TAG, "arm LP skip: lp_task null");
+        return;
+    }
+    if (shutdown_requested || standby_wake_exit) {
+        return;
+    }
+    if (lp_session_active) {
+        static int64_t s_arm_busy_last_warn_us = 0;
+        const int64_t now_us = esp_timer_get_time();
+        if (StandbyScreen::IsActive() && now_us - s_arm_busy_last_warn_us > 30 * 1000000LL) {
+            ESP_LOGD(TAG, "arm LP skip: lp_session_active (overlay 在，未再 notify standby_lp)");
+            s_arm_busy_last_warn_us = now_us;
+        }
         return;
     }
     lp_session_active = true;

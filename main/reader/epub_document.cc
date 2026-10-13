@@ -310,7 +310,7 @@ bool EpubDocument::ParseOpf(const std::string& opf_path) {
         title_ = TitleFromPathFallback(path_);
     }
 
-    ESP_LOGI(TAG, "opf ok title='%s' spine=%d cover='%s'", title_.c_str(), SpineCount(),
+    ESP_LOGD(TAG, "opf ok title='%s' spine=%d cover='%s'", title_.c_str(), SpineCount(),
              cover_href_.c_str());
     return !spine_.empty();
 }

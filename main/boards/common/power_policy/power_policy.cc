@@ -1,5 +1,6 @@
 #include "power_policy.h"
 
+#include "battery_uv_lockout.h"
 #include "power_policy_priv.h"
 #include "power_hw.h"
 #include "application.h"
@@ -8,7 +9,9 @@
 #include "settings.h"
 #include "standby_screen/standby_screen.h"
 #include "cloud_screen/cloud_screen.h"
+#include "settings_screen/settings_log_upload.h"
 
+#include <driver/gpio.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -20,10 +23,36 @@
 #include "lvgl.h"
 #include <esp_lv_adapter.h>
 #include "screen_common.h"
+#include "config.h"
 
 #include <atomic>
+#include <cstdio>
+#include <cstring>
 
 static const char* TAG = "PowerPolicy";
+
+static std::atomic<const char*> s_lp_phase{"boot"}; // 待机 LP 阶段字面量
+static std::atomic<uint32_t> s_lp_phase_ms{0};      // 进入该阶段的毫秒戳
+static std::atomic<uint32_t> s_lp_phase_core{0};    // 置阶段的 CPU 核
+static std::atomic<uint8_t> s_lp_iot_susp{0};       // 1：iot 键已 stop
+
+static const char* LpTaskStateName(eTaskState st)
+{
+    switch (st) {
+        case eRunning:
+            return "Run";
+        case eReady:
+            return "Rdy";
+        case eBlocked:
+            return "Blk";
+        case eSuspended:
+            return "Sus";
+        case eDeleted:
+            return "Del";
+        default:
+            return "?";
+    }
+}
 
 constexpr const char* kPowerNvsNs = "power";
 constexpr const char* kIdleMhzNvsKey = "idle_mhz";
@@ -236,7 +265,7 @@ void RestoreWifiConfigUiAsync(void* /*arg*/)
     hint += wifi_ap.GetSsid();
     hint += Lang::Strings::ACCESS_VIA_BROWSER;
     hint += wifi_ap.GetWebServerUrl();
-    Application::GetInstance().Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "gear", "");
+    Application::GetInstance().Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "gear");
 }
 
 void RestoreProvisioningUiAsync(void* /*arg*/)
@@ -249,10 +278,12 @@ void RestoreProvisioningUiAsync(void* /*arg*/)
     }
 }
 
-/** 与 boot_key EnterStandbyAsync 同形：无 lambda；进待机前先停传输 */
+/** 与 boot_key EnterStandbyAsync 同形：无 lambda；进待机前先停传输/日志上传 */
 void EnterStandbyUiShowCb(void* /*arg*/)
 {
     CloudScreen::StopTransfer();
+    // 与电源键同：LVGL 上下文内同步 Teardown，勿 RequestAbort 再套 lv_async
+    SettingsLogUpload_Teardown();
     StandbyScreen::Show();
 }
 
@@ -316,7 +347,9 @@ int NormalizeIdleToStandbySec(int sec)
 
 int NormalizeStandbyToShutdownSec(int sec)
 {
-    if (sec == 0 || sec == 3 * 60 || sec == 10 * 60 || sec == 30 * 60) {
+    // 0=永不；旧 1/9/12/15 时等 NVS 值归一为默认
+    if (sec == 0 || sec == 3 * 60 || sec == 10 * 60 || sec == 30 * 60 ||
+        sec == 3 * 60 * 60 || sec == 6 * 60 * 60) {
         return sec;
     }
     return pwr::kStandbyToShutdownSecDefault;
@@ -340,7 +373,7 @@ void LoadPowerPrefsFromNvs()
         NormalizeNetGraceSec(settings.GetInt(kNetGraceNvsKey, pwr::kNetGraceSecDefault));
     pwr::standby_to_shutdown_sec = NormalizeStandbyToShutdownSec(
         settings.GetInt(kStandbyToOffNvsKey, pwr::kStandbyToShutdownSecDefault));
-    ESP_LOGI(TAG, "nvs load idle_mhz=%d idle_stb_s=%d net_grace_s=%d stb_off_s=%d", pwr::idle_cpu_mhz,
+    ESP_LOGD(TAG, "nvs load idle_mhz=%d idle_stb_s=%d net_grace_s=%d stb_off_s=%d", pwr::idle_cpu_mhz,
              pwr::idle_to_standby_sec, pwr::net_grace_sec, pwr::standby_to_shutdown_sec);
 }
 
@@ -409,6 +442,7 @@ void TickCb(void* /*arg*/)
     }
     xSemaphoreGive(pwr::mu);
     pwr::FlushCpuFreqOutsideLock();
+    BatteryUvShutdownTick();
 }
 
 void SelfCheckThresholdsOnce()
@@ -479,7 +513,7 @@ void FlushCpuFreqOutsideLock()
     if (wifi_stop_pending) {
         wifi_stop_pending = false;
         power_hw_wifi_stop();
-        ESP_LOGI(TAG, "WiFi paused (idle / standby LP)");
+        ESP_LOGD(TAG, "WiFi paused (idle / standby LP)");
     }
     if (wifi_start_pending) {
         wifi_start_pending = false;
@@ -525,7 +559,7 @@ void BeginPowerOffLocked()
     power_hw_begin_power_off();
 }
 
-/** 与 want_wifi_off 同条件：AppIdle / 待机 Overlay → MAIN_PWR 掉电 */
+/** 仅待机 Overlay 掉 MAIN_PWR；保网到期进 AppIdle 不停轨（马达/BT 仍可用） */
 void QueueMainRailForModeLocked(bool want_off)
 {
     if (shutdown_requested) {
@@ -554,9 +588,8 @@ void ApplyLocked(Mode next)
     }
 
     const Mode prev = mode;
-    const bool want_main_rail_off =
-        (next == Mode::AppIdle) ||
-        (next == Mode::StandbyUi && StandbyScreen::IsActive());
+    // 仅待机掉 MAIN_PWR；AppIdle（保网到期）只停网/降频，不停外设总电源
+    const bool want_main_rail_off = (next == Mode::StandbyUi && StandbyScreen::IsActive());
 
     if (next == prev) {
         if (next == Mode::StandbyUi && !standby_wake_exit && !shutdown_requested) {
@@ -582,7 +615,7 @@ void ApplyLocked(Mode next)
     }
 
     mode = next;
-    ESP_LOGI(TAG, "mode %s -> %s", ModeName(prev), ModeName(next));
+    ESP_LOGD(TAG, "mode %s -> %s", ModeName(prev), ModeName(next));
 
     if (prev == Mode::StandbyUi && next != Mode::StandbyUi) {
         standby_wake_exit = false;
@@ -618,7 +651,6 @@ void ApplyLocked(Mode next)
         power_hw_pa_set(want_pa);
     }
 
-    // MAIN_PWR 与保网掉电同生命周期（含 4G 板 AppIdle，不依赖 WiFi pause）
     QueueMainRailForModeLocked(want_main_rail_off);
 
     if (!IsWifiBoard()) {
@@ -655,6 +687,71 @@ PowerPolicy& PowerPolicy::GetInstance()
 {
     static PowerPolicy inst;
     return inst;
+}
+
+void PowerPolicy::DebugSetLpPhase(const char* phase)
+{
+    s_lp_phase_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000),
+                        std::memory_order_relaxed);
+    s_lp_phase_core.store(xPortGetCoreID(), std::memory_order_relaxed);
+    s_lp_phase.store(phase != nullptr ? phase : "?", std::memory_order_relaxed);
+}
+
+void PowerPolicy::DebugSetIotSuspended(bool suspended)
+{
+    s_lp_iot_susp.store(suspended ? 1 : 0, std::memory_order_relaxed);
+}
+
+bool PowerPolicy::DebugFormatLpProbe(char* buf, size_t len)
+{
+    if (buf == nullptr || len < 16) {
+        return false;
+    }
+    const char* phase = s_lp_phase.load(std::memory_order_relaxed);
+    if (phase == nullptr) {
+        phase = "?";
+    }
+    const bool overlay = StandbyScreen::IsActive();
+    const bool session = pwr::lp_session_active;
+    const bool standby = (pwr::mode == pwr::Mode::StandbyUi);
+    const bool hot = (strcmp(phase, "wait_notify") != 0 && strcmp(phase, "boot") != 0);
+    if (!overlay && !session && !standby && !hot) {
+        return false;
+    }
+
+    const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    const uint32_t age_ms = now_ms - s_lp_phase_ms.load(std::memory_order_relaxed);
+    const bool mu_busy = (pwr::mu != nullptr && xSemaphoreTake(pwr::mu, 0) != pdTRUE);
+    if (!mu_busy && pwr::mu != nullptr) {
+        xSemaphoreGive(pwr::mu);
+    }
+
+    const char* lp_st = "null";
+    unsigned lp_hwm = 0;
+    if (pwr::lp_task != nullptr) {
+        lp_st = LpTaskStateName(eTaskGetState(pwr::lp_task));
+        lp_hwm = static_cast<unsigned>(uxTaskGetStackHighWaterMark(pwr::lp_task));
+    }
+    const char* lv_st = "null";
+    unsigned lv_hwm = 0;
+    TaskHandle_t lv_task = xTaskGetHandle("taskLVGL");
+    if (lv_task != nullptr) {
+        lv_st = LpTaskStateName(eTaskGetState(lv_task));
+        lv_hwm = static_cast<unsigned>(uxTaskGetStackHighWaterMark(lv_task));
+    }
+
+    snprintf(buf, len,
+             "ph=%s age=%ums phcore=%u cxcore=%u mode=%s ses=%d ov=%d wx=%d tz=%d iot=%d "
+             "pwr=%d boot=%d mu=%s lp=%s/%u lv=%s/%u",
+             phase, static_cast<unsigned>(age_ms),
+             static_cast<unsigned>(s_lp_phase_core.load(std::memory_order_relaxed)),
+             static_cast<unsigned>(xPortGetCoreID()), pwr::ModeName(pwr::mode), session ? 1 : 0,
+             overlay ? 1 : 0, pwr::standby_wake_exit ? 1 : 0, pwr::touch_asleep ? 1 : 0,
+             s_lp_iot_susp.load(std::memory_order_relaxed) ? 1 : 0,
+             gpio_get_level(POWER_BUTTON_GPIO) == 0 ? 1 : 0,
+             gpio_get_level(BOOT_BUTTON_GPIO) == 0 ? 1 : 0, mu_busy ? "busy" : "free", lp_st,
+             lp_hwm, lv_st, lv_hwm);
+    return true;
 }
 
 void PowerPolicy::Init(Board* board)

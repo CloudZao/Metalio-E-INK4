@@ -13,11 +13,10 @@
 #include "ff.h"
 #include "assets/lang_config.h"
 
-namespace {
 
-constexpr const char* TAG = "SettingsStorage";
+static constexpr const char* TAG = "SettingsStorage";
 
-struct StorageUi {
+struct SettingsStorageUi {
     lv_obj_t* status_lbl = nullptr;
     lv_obj_t* capacity_lbl = nullptr;
     lv_obj_t* usb_btn = nullptr;
@@ -26,9 +25,9 @@ struct StorageUi {
     bool alive = false;
 };
 
-StorageUi s_ui;
+static SettingsStorageUi s_ui;
 
-bool QueryCapacity(uint64_t* total_bytes, uint64_t* free_bytes) {
+static bool QueryCapacity(uint64_t* total_bytes, uint64_t* free_bytes) {
     if (total_bytes == nullptr || free_bytes == nullptr) {
         return false;
     }
@@ -53,8 +52,7 @@ bool QueryCapacity(uint64_t* total_bytes, uint64_t* free_bytes) {
     *free_bytes = 0;
     return *total_bytes > 0;
 }
-
-void RefreshStorageUi() {
+static void RefreshStorageUi() {
     if (!s_ui.alive) {
         return;
     }
@@ -62,8 +60,11 @@ void RefreshStorageUi() {
     auto& sd = SdCardManager::GetInstance();
     auto& vd = UsbVirtualDisk::GetInstance();
     const bool exported = vd.IsSdExportedToHost();
+    const bool busy = vd.IsBusy();
     const bool has_card = sd.HasCard() || sd.IsMounted() || vd.IsGadgetActive();
-    const bool usable = sd.IsMounted() && sd.GetCard() != nullptr && !exported;
+    // 启停 U 盘窗口禁止 f_getfree，避免与 FatFS 卸载/收回抢锁 panic
+    const bool usable =
+        sd.IsMounted() && sd.GetCard() != nullptr && !exported && !busy;
 
     if (s_ui.status_lbl != nullptr) {
         if (has_card) {
@@ -76,6 +77,8 @@ void RefreshStorageUi() {
     if (s_ui.capacity_lbl != nullptr) {
         if (!has_card) {
             lv_label_set_text(s_ui.capacity_lbl, Lang::Strings::SETTINGS_STORAGE_CAP_DASH);
+        } else if (busy) {
+            lv_label_set_text(s_ui.capacity_lbl, Lang::Strings::SETTINGS_STORAGE_CAP_BUSY);
         } else if (!usable) {
             lv_label_set_text(s_ui.capacity_lbl, Lang::Strings::SETTINGS_STORAGE_CAP_EXPORT);
         } else {
@@ -121,29 +124,28 @@ void RefreshStorageUi() {
     }
 }
 
-void OnUsbUiNotifyAsync(void* /*user_data*/) {
+static void OnUsbUiNotifyAsync(void* /*user_data*/) {
     if (!s_ui.alive) {
         return;
     }
     RefreshStorageUi();
 }
 
-void OnUsbVirtualDiskNotify() {
+static void OnUsbVirtualDiskNotify() {
     if (lv_async_call(OnUsbUiNotifyAsync, nullptr) != LV_RESULT_OK) {
         ESP_LOGW(TAG, "lv_async_call failed for usb notify");
     }
 }
 
-void OnUsbButtonClicked(lv_event_t* /*e*/) {
+static void OnUsbButtonClicked(lv_event_t* /*e*/) {
     auto& vd = UsbVirtualDisk::GetInstance();
     if (!vd.IsSupported()) {
         return;
     }
+    // Toggle 内 NotifyUi → 异步刷新；勿在此同步扫容量（启停窗口 FatFS 未稳）
     vd.Toggle();
-    RefreshStorageUi();
 }
 
-}  // namespace
 
 void SettingsStorageTab_Reset() {
     auto& vd = UsbVirtualDisk::GetInstance();

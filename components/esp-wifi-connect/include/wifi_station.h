@@ -43,9 +43,17 @@ public:
      */
     bool IsLinkInProgress();
     bool WaitForConnected(int timeout_ms = 10000);
+    /**
+     * @brief 获取当前关联 AP 的 RSSI
+     * @return RSSI（dBm）；未关联或读取失败返回 0
+     */
     int8_t GetRssi();
     std::string GetSsid() const { return ssid_; }
     std::string GetIpAddress() const { return ip_address_; }
+    /**
+     * @brief 获取当前关联 AP 的信道
+     * @return 信道号；未关联或读取失败返回 0
+     */
     uint8_t GetChannel();
     void SetPowerSaveMode(bool enabled);
 

@@ -11,13 +11,13 @@
  * @note UI 先 RequestCancel() 置位；AbortBoundHttp() 才能打断阻塞 Read。
  * @note AbortBoundHttp / RequestStop 勿在持 LVGL 锁时调用：Http::Close→Disconnect 会 join 接收任务，
  *       易在 lv_timer_handler 内把定时器链踩坏（InstructionFetchError）。
- * @note 关键修复：这里必须持有 Http 的真实所有权，不能保留裸指针，否则会出现悬空 Http*，
- *       进而在 DownloadGate::AbortBoundHttp() 中访问已释放对象并触发 LoadProhibited。
+ * @note 真实所有权在 gate（shared_ptr）；AbortBoundHttp 先 pin 再 Close，与 worker CloseHttp 并发时
+ *       对象活到 join/回调结束，避免析构后 OnTcpDisconnected 踩 mutex（LoadProhibited / queue assert）。
  */
 struct DownloadGate {
     std::atomic<bool> cancel{false};
     std::mutex mu;
-    std::unique_ptr<Http> http;
+    std::shared_ptr<Http> http;
 
     void Reset() {
         cancel.store(false, std::memory_order_release);
@@ -30,15 +30,15 @@ struct DownloadGate {
         cancel.store(true, std::memory_order_release);
     }
 
-    /** Close 当前绑定 Http；必须在非 LVGL 任务调用 */
+    /** Close 当前绑定 Http 以打断阻塞；pin 住对象直至 Close/join 返回 */
     void AbortBoundHttp() {
-        std::unique_ptr<Http> bound;
+        std::shared_ptr<Http> pin;
         {
             std::lock_guard<std::mutex> lock(mu);
-            bound = std::move(http);
+            pin = http;
         }
-        if (bound != nullptr) {
-            bound->Close();
+        if (pin != nullptr) {
+            pin->Close();
         }
     }
 
@@ -59,12 +59,13 @@ struct DownloadGate {
             h->Close();
             return false;
         }
+        std::shared_ptr<Http> owned = std::move(h);
         std::lock_guard<std::mutex> lock(mu);
         if (cancel.load(std::memory_order_acquire)) {
-            h->Close();
+            owned->Close();
             return false;
         }
-        http = std::move(h);
+        http = std::move(owned);
         return true;
     }
 
@@ -74,10 +75,10 @@ struct DownloadGate {
     }
 
     /**
-     * @brief 下载任务收尾：仍持有绑定时 Close；已被 Abort 摘走则不再 Close
+     * @brief 下载任务收尾：移出绑定并 Close；Abort 仍 pin 时对象延后析构
      */
     void CloseHttp() {
-        std::unique_ptr<Http> bound;
+        std::shared_ptr<Http> bound;
         {
             std::lock_guard<std::mutex> lock(mu);
             bound = std::move(http);

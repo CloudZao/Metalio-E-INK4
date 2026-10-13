@@ -913,7 +913,7 @@ void WifiConfigurationAp::PauseForLp()
             ESP_LOGW(TAG, "LP pause wifi stop: %s", esp_err_to_name(err));
         }
     }
-    ESP_LOGI(TAG, "config AP paused for LP (scan/httpd/dns/radio off)");
+    ESP_LOGD(TAG, "config AP paused for LP (scan/httpd/dns/radio off)");
 }
 
 esp_err_t WifiConfigurationAp::ResumeFromLp()
@@ -947,6 +947,6 @@ esp_err_t WifiConfigurationAp::ResumeFromLp()
     if (!is_connecting_) {
         esp_wifi_scan_start(nullptr, false);
     }
-    ESP_LOGI(TAG, "config AP resumed from LP");
+    ESP_LOGD(TAG, "config AP resumed from LP");
     return ESP_OK;
 }

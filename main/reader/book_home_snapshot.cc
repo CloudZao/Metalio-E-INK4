@@ -182,11 +182,11 @@ void PersistTask(void* /*arg*/) {
         const bool do_agg = s_persist_agg_pending.exchange(false, std::memory_order_acq_rel);
         if (do_recent) {
             PersistRecentNow();
-            ESP_LOGI(TAG, "nvs recent flushed");
+            ESP_LOGD(TAG, "nvs recent flushed");
         }
         if (do_agg) {
             PersistAggNow();
-            ESP_LOGI(TAG, "nvs aggregate flushed");
+            ESP_LOGD(TAG, "nvs aggregate flushed");
         }
         if (!do_recent && !do_agg) {
             // 先清 running，再二次确认 pending（与 SchedulePersist 的 CAS 对齐）
@@ -202,7 +202,9 @@ void PersistTask(void* /*arg*/) {
             break;
         }
     }
-    vTaskDelete(nullptr);
+    // Match xTaskCreatePinnedToCoreWithCaps: plain vTaskDelete leaves the
+    // statically registered stack/TCB allocations owned by WithCaps behind.
+    vTaskDeleteWithCaps(nullptr);
 }
 
 void SchedulePersist(bool recent, bool agg) {
@@ -263,7 +265,7 @@ void HydrateLocked() {
             ++recent_n;
         }
     }
-    ESP_LOGI(TAG, "hydrated recent_n=%u agg_valid=%d sec=%u fin=%d",
+    ESP_LOGD(TAG, "hydrated recent_n=%u agg_valid=%d sec=%u fin=%d",
              static_cast<unsigned>(recent_n), s_agg.valid ? 1 : 0,
              static_cast<unsigned>(s_agg.total_seconds), s_agg.finished_count);
 }
@@ -307,7 +309,7 @@ void NoteOpenedBook(const char* book_abs_path) {
         }
         s_recent_dirty = true;
         changed = true;
-        ESP_LOGI(TAG, "recent MRU head=%s n=%u", s_recent_rel[0].c_str(), static_cast<unsigned>(w));
+        ESP_LOGD(TAG, "recent MRU head=%s n=%u", s_recent_rel[0].c_str(), static_cast<unsigned>(w));
     }
     if (changed) {
         SchedulePersist(true, false);
@@ -335,7 +337,7 @@ void RemoveBook(const char* book_abs_path) {
         if (changed) {
             CompactRecentLocked();
             s_recent_dirty = true;
-            ESP_LOGI(TAG, "recent pruned %s", rel.c_str());
+            ESP_LOGD(TAG, "recent pruned %s", rel.c_str());
         }
     }
     if (changed) {
@@ -367,7 +369,7 @@ void SubtractAggregateContribution(uint32_t reading_seconds, bool finished) {
         }
         if (changed) {
             s_agg_dirty = true;
-            ESP_LOGI(TAG, "aggregate subtract sec=%u finished=%d -> sec=%u fin=%d",
+            ESP_LOGD(TAG, "aggregate subtract sec=%u finished=%d -> sec=%u fin=%d",
                      static_cast<unsigned>(reading_seconds), finished ? 1 : 0,
                      static_cast<unsigned>(s_agg.total_seconds), s_agg.finished_count);
         }
@@ -441,7 +443,7 @@ void StoreAggregateStats(uint32_t total_seconds, int finished_count) {
         s_agg.total_seconds = total_seconds;
         s_agg.finished_count = finished_count;
         s_agg_dirty = true;  // 内存已是权威，避免之后 Hydrate 用旧 NVS 覆盖
-        ESP_LOGI(TAG, "aggregate stored sec=%u finished=%d", static_cast<unsigned>(total_seconds),
+        ESP_LOGD(TAG, "aggregate stored sec=%u finished=%d", static_cast<unsigned>(total_seconds),
                  finished_count);
     }
     // 开机 sync 在 DRAM 栈：可同步写；统一走异步亦安全

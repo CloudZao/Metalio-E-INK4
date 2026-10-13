@@ -34,6 +34,7 @@ struct ContentBlock {
     ContentKind kind = ContentKind::kText;
     std::string text;       // kText
     std::string image_href; // kImage：相对 EPUB 根或绝对文件路径
+    bool chapter_title = false; // 章名段：分页后加粗居中；可含「第N章」换行接章节名
 };
 
 // 一页上的一个绘制单元
@@ -47,15 +48,18 @@ struct PageItem {
     bool para_indent = false;
     // 段前加间距（段首行，含不缩进的章名）；渲染侧非页首时插入垂直 spacer
     bool para_gap_before = false;
+    // 章名行：加粗居中；「第N章」与章节名可分行；误识别也不丢句
+    bool chapter_title = false;
 };
 
 struct Page {
     std::vector<PageItem> items;
 };
 
-// 阅读排版默认值（实际行距/段距由 BookReaderPrefs 档位决定，经 BookSession::SetGaps 注入）
-constexpr lv_coord_t kReaderLineGapDefault = 4;
-constexpr lv_coord_t kReaderParaGapDefault = 24;
+// 阅读排版默认值（与 BookReaderPrefs 标准档一致；经 BookSession::SetGaps 注入）
+constexpr lv_coord_t kReaderLineGapDefault = 6;
+constexpr lv_coord_t kReaderParaGapDefault = 14;
+constexpr lv_coord_t kReaderChapterTitleAfterGap = 10; // 章名与后文额外间距
 /** @deprecated 兼容旧引用；新代码用 Default 或 prefs */
 constexpr lv_coord_t kReaderLineGap = kReaderLineGapDefault;
 constexpr lv_coord_t kReaderParaGap = kReaderParaGapDefault;

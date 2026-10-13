@@ -10,9 +10,14 @@ extern "C" {
 #endif
 
 // 震动偏好：NVS namespace "display" / key "haptic"，默认开启。
+// 强度：key "haptic_lvl"（0 弱 / 1 中 / 2 强），默认弱。
 // 读 RAM 缓存；写内存后由后台任务异步落盘，不要在 LVGL 任务直接写 flash。
 bool HapticIsEnabled(void);
 void HapticSetEnabled(bool enabled);
+
+/** 震动强度：0 弱(默认) / 1 中 / 2 强 */
+int HapticGetIntensity(void);
+void HapticSetIntensity(int intensity);
 
 // 开关开启时触发 Board::PulseVibration()；无马达板为空操作。
 void HapticPulseIfEnabled(void);

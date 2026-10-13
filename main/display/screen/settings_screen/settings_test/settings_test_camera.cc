@@ -18,55 +18,54 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestCam";
-constexpr uint32_t kDetectTimeoutMs = 8000;
-constexpr uint32_t kCaptureTimeoutMs = 20000;
-constexpr int kWorkerStack = 10 * 1024;
-constexpr UBaseType_t kWorkerPrio = 5;
-constexpr lv_coord_t kOverlayPad = 14;
-constexpr lv_coord_t kPhotoBtnW = 102; // 容纳英文 Capture
-constexpr lv_coord_t kPhotoBtnH = 40;
-constexpr lv_coord_t kCameraTitleW = 96; // 容纳英文 Camera
+static constexpr const char* TAG = "SettingsTestCam";
+static constexpr uint32_t kDetectTimeoutMs = 8000;
+static constexpr uint32_t kCaptureTimeoutMs = 20000;
+static constexpr int kWorkerStack = 10 * 1024;
+static constexpr UBaseType_t kWorkerPrio = 5;
+static constexpr lv_coord_t kOverlayPad = 14;
+static constexpr lv_coord_t kPhotoBtnW = 102; // 容纳英文 Capture
+static constexpr lv_coord_t kPhotoBtnH = 40;
+static constexpr lv_coord_t kCameraTitleW = 96; // 容纳英文 Camera
 
-lv_obj_t* s_mask = nullptr;
-lv_obj_t* s_img = nullptr;
-lv_obj_t* s_photo_btn = nullptr;
-lv_obj_t* s_overlay_photo_btn = nullptr;
-std::unique_ptr<reader::RasterImage> s_raster;
-bool s_busy = false;
-bool s_detect_ok = false;
-char s_detect_id[40]{};
-uint32_t s_session_gen = 0;
+static lv_obj_t* s_mask = nullptr;
+static lv_obj_t* s_img = nullptr;
+static lv_obj_t* s_photo_btn = nullptr;
+static lv_obj_t* s_overlay_photo_btn = nullptr;
+static std::unique_ptr<reader::RasterImage> s_raster;
+static bool s_busy = false;
+static bool s_detect_ok = false;
+static char s_detect_id[40]{};
+static uint32_t s_session_gen = 0;
 
-struct DetectJob {
+struct SettingsTestCamDetectJob {
     uint32_t gen = 0;
 };
 
-struct DetectDoneMsg {
+struct SettingsTestCamDetectDoneMsg {
     uint32_t gen = 0;
     esp_err_t err = ESP_FAIL;
     UsbUvcStill::DetectInfo info{};
 };
 
-struct CaptureJob {
+struct SettingsTestCamCaptureJob {
     uint32_t gen = 0;
     int max_w = 640;
     int max_h = 360;
 };
 
-struct CaptureDoneMsg {
+struct SettingsTestCamCaptureDoneMsg {
     uint32_t gen = 0;
     esp_err_t err = ESP_FAIL;
     char detail[48]{};
     reader::RasterImage* raster = nullptr;
 };
 
-void CloseOverlay();
-void StartCapture();
+static void CloseOverlay();
+static void StartCapture();
 
-void ApplyIdleRowText() {
+static void ApplyIdleRowText() {
     auto& row = SettingsTest_Ui().camera;
     if (s_busy || UsbUvcStill::IsBusy()) {
         SettingsTest_SetRowValue(row, Lang::Strings::SETTINGS_TEST_BUSY, false);
@@ -83,7 +82,7 @@ void ApplyIdleRowText() {
     }
 }
 
-lv_obj_t* MakePhotoButton(lv_obj_t* parent, lv_coord_t w, lv_coord_t h, lv_event_cb_t cb) {
+static lv_obj_t* MakePhotoButton(lv_obj_t* parent, lv_coord_t w, lv_coord_t h, lv_event_cb_t cb) {
     lv_obj_t* btn = lv_obj_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_set_size(btn, w, h);
@@ -108,7 +107,7 @@ lv_obj_t* MakePhotoButton(lv_obj_t* parent, lv_coord_t w, lv_coord_t h, lv_event
     return btn;
 }
 
-void CloseOverlay() {
+static void CloseOverlay() {
     if (s_img != nullptr) {
         lv_image_set_src(s_img, static_cast<const void*>(nullptr));
         s_img = nullptr;
@@ -121,12 +120,12 @@ void CloseOverlay() {
     s_raster.reset();
 }
 
-void OnOverlayCloseClicked(lv_event_t* e) {
+static void OnOverlayCloseClicked(lv_event_t* e) {
     lv_event_stop_bubbling(e);
     CloseOverlay();
 }
 
-void OnOverlayPhotoClicked(lv_event_t* e) {
+static void OnOverlayPhotoClicked(lv_event_t* e) {
     lv_event_stop_bubbling(e);
     StartCapture();
 }
@@ -194,8 +193,8 @@ void ShowOverlay(reader::RasterImage* raster) {
     lv_obj_clear_flag(close_lbl, LV_OBJ_FLAG_CLICKABLE);
 }
 
-void OnCaptureDoneAsync(void* user_data) {
-    auto* msg = static_cast<CaptureDoneMsg*>(user_data);
+static void OnCaptureDoneAsync(void* user_data) {
+    auto* msg = static_cast<SettingsTestCamCaptureDoneMsg*>(user_data);
     s_busy = false;
 
     if (msg == nullptr) {
@@ -225,9 +224,9 @@ void OnCaptureDoneAsync(void* user_data) {
     delete msg;
 }
 
-void CaptureWorker(void* arg) {
-    std::unique_ptr<CaptureJob> job(static_cast<CaptureJob*>(arg));
-    auto* msg = new (std::nothrow) CaptureDoneMsg();
+static void CaptureWorker(void* arg) {
+    std::unique_ptr<SettingsTestCamCaptureJob> job(static_cast<SettingsTestCamCaptureJob*>(arg));
+    auto* msg = new (std::nothrow) SettingsTestCamCaptureDoneMsg();
     if (msg == nullptr) {
         s_busy = false;
         vTaskDelete(nullptr);
@@ -284,7 +283,7 @@ void CaptureWorker(void* arg) {
     vTaskDelete(nullptr);
 }
 
-void StartCapture() {
+static void StartCapture() {
     if (!SettingsTest_IsLive()) {
         return;
     }
@@ -296,7 +295,7 @@ void StartCapture() {
         CloseOverlay();
     }
 
-    auto* job = new (std::nothrow) CaptureJob();
+    auto* job = new (std::nothrow) SettingsTestCamCaptureJob();
     if (job == nullptr) {
         SettingsTest_SetRowValue(SettingsTest_Ui().camera, Lang::Strings::BOOK_OUT_OF_MEMORY, true);
         SettingsTest_SetRowStatus(SettingsTest_Ui().camera, false);
@@ -325,8 +324,8 @@ void StartCapture() {
     }
 }
 
-void OnDetectDoneAsync(void* user_data) {
-    auto* msg = static_cast<DetectDoneMsg*>(user_data);
+static void OnDetectDoneAsync(void* user_data) {
+    auto* msg = static_cast<SettingsTestCamDetectDoneMsg*>(user_data);
     s_busy = false;
     if (msg == nullptr) {
         return;
@@ -350,8 +349,8 @@ void OnDetectDoneAsync(void* user_data) {
     delete msg;
 }
 
-void DetectWorker(void* arg) {
-    std::unique_ptr<DetectJob> job(static_cast<DetectJob*>(arg));
+static void DetectWorker(void* arg) {
+    std::unique_ptr<SettingsTestCamDetectJob> job(static_cast<SettingsTestCamDetectJob*>(arg));
     // OnLoad 已拉低 P0.0(USB_MUX_SEL)，直接 Detect，不再额外等待
     if (!job || job->gen != s_session_gen) {
         s_busy = false;
@@ -359,7 +358,7 @@ void DetectWorker(void* arg) {
         return;
     }
 
-    auto* msg = new (std::nothrow) DetectDoneMsg();
+    auto* msg = new (std::nothrow) SettingsTestCamDetectDoneMsg();
     if (msg == nullptr) {
         s_busy = false;
         vTaskDelete(nullptr);
@@ -375,7 +374,7 @@ void DetectWorker(void* arg) {
     vTaskDelete(nullptr);
 }
 
-void StartDetect() {
+static void StartDetect() {
     if (!SettingsTest_IsLive()) {
         return;
     }
@@ -383,7 +382,7 @@ void StartDetect() {
         return;
     }
 
-    auto* job = new (std::nothrow) DetectJob();
+    auto* job = new (std::nothrow) SettingsTestCamDetectJob();
     if (job == nullptr) {
         SettingsTest_SetRowValue(SettingsTest_Ui().camera, Lang::Strings::BOOK_OUT_OF_MEMORY, true);
         SettingsTest_SetRowStatus(SettingsTest_Ui().camera, false);
@@ -405,16 +404,15 @@ void StartDetect() {
     }
 }
 
-void OnRowClicked(lv_event_t* /*e*/) {
+static void OnRowClicked(lv_event_t* /*e*/) {
     StartCapture();
 }
 
-void OnRowPhotoClicked(lv_event_t* e) {
+static void OnRowPhotoClicked(lv_event_t* e) {
     lv_event_stop_bubbling(e);
     StartCapture();
 }
 
-}  // namespace
 
 void SettingsTestCamera_BuildRow(lv_obj_t* parent) {
     auto& ui = SettingsTest_Ui();

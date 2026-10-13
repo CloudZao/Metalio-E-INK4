@@ -55,6 +55,7 @@ inline void LogHttpBinaryRequest(const char* tag, const char* method, const std:
 }
 
 inline const char* const kHost = cloudzao_host;
+inline const char* const kAdminHost = cloudzao_log_upload_host;
 inline const char* const kDefaultOtaUrl = cloudzao_ota_url;
 inline const char* const kBookToolsUrl = cloudzao_book_tools_url;
 
@@ -71,10 +72,15 @@ inline const char* const kPushResources = cloudzao_path_push_resources;
 inline const char* const kLibrarySync = cloudzao_path_library_sync;
 inline const char* const kDeviceLocationWifi = cloudzao_path_device_location_wifi;
 inline const char* const kVisionUpload = cloudzao_path_vision_upload;
+inline const char* const kDeviceLogs = cloudzao_path_device_logs;
 
 // Host is configured; blank open-source builds leave it empty.
 inline bool HasHost() {
     return kHost[0] != '\0';
+}
+
+inline bool HasAdminHost() {
+    return kAdminHost[0] != '\0';
 }
 
 // OTA URL is set when available.
@@ -88,6 +94,13 @@ inline std::string Url(const char* path) {
         return std::string();
     }
     return std::string(kHost) + path;
+}
+
+inline std::string AdminUrl(const char* path) {
+    if (!HasAdminHost() || path == nullptr || path[0] == '\0') {
+        return std::string();
+    }
+    return std::string(kAdminHost) + path;
 }
 
 inline std::string SinicloudTokenUrl() {
@@ -155,6 +168,15 @@ inline std::string DeviceLocationWifiUrl() {
 
 inline std::string VisionUploadUrl() {
     return Url(kVisionUpload);
+}
+
+// POST 设备日志：`?mac_id=` 为设备 MAC
+inline std::string DeviceLogsUploadUrl(const std::string& mac_id) {
+    std::string base = AdminUrl(kDeviceLogs);
+    if (base.empty() || mac_id.empty()) {
+        return std::string();
+    }
+    return base + "?mac_id=" + mac_id;
 }
 
 // Redact URLs in log output when a host is configured.

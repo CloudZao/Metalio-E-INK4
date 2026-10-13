@@ -80,7 +80,7 @@ size_t DeduplicateBooksByBasename(std::vector<BookInfo>& books) {
     }
     books.resize(write);
     if (dropped > 0) {
-        ESP_LOGI(TAG, "同步去重完成: 丢掉 %u 本重名, 上报 %u 本",
+        ESP_LOGD(TAG, "同步去重完成: 丢掉 %u 本重名, 上报 %u 本",
                  static_cast<unsigned>(dropped), static_cast<unsigned>(books.size()));
     }
     return dropped;
@@ -99,7 +99,7 @@ std::string BuildReportBodyFromCache(const std::vector<BookInfo>& books, size_t 
                                 books.begin() + static_cast<std::ptrdiff_t>(end));
     std::vector<BookSession::ProgressPeek> peeks;
     const size_t hits = book_progress_cache::FillPeeksForBooks(slice, peeks);
-    ESP_LOGI(TAG, "sync body from cache hits=%u/%u", static_cast<unsigned>(hits),
+    ESP_LOGD(TAG, "sync body from cache hits=%u/%u", static_cast<unsigned>(hits),
              static_cast<unsigned>(slice.size()));
 
     cJSON* arr = cJSON_CreateArray();
@@ -139,7 +139,7 @@ std::string BuildReportBodyFromCache(const std::vector<BookInfo>& books, size_t 
         }
     }
 
-    ESP_LOGI(TAG, "payload books=%d range=[%u,%u)", cJSON_GetArraySize(arr),
+    ESP_LOGD(TAG, "payload books=%d range=[%u,%u)", cJSON_GetArraySize(arr),
              static_cast<unsigned>(begin), static_cast<unsigned>(end));
 
     char* printed = cJSON_PrintUnformatted(arr);
@@ -234,7 +234,7 @@ bool PostProgressReport(const std::string& body, std::string& err_out) {
             std::snprintf(snap_buf, sizeof(snap_buf), "%d", snap->valueint);
         }
 
-        ESP_LOGI(TAG,
+        ESP_LOGD(TAG,
                  "report ok applied=%d snapshotVersion=%s bookCount=%d userAgentId=%s "
                  "lastSyncTime=%s",
                  cJSON_IsTrue(applied) ? 1 : 0, snap_buf,
@@ -286,7 +286,7 @@ bool PostOnceFromCache() {
         ESP_LOGW(TAG, "阅读时长同步: 本地 %u 本, 仅上报前 %u 本(上限)",
                  static_cast<unsigned>(total), static_cast<unsigned>(kReportMaxBooks));
     } else {
-        ESP_LOGI(TAG, "阅读时长同步开始: %u 本(缓存组包)", static_cast<unsigned>(total));
+        ESP_LOGD(TAG, "阅读时长同步开始: %u 本(缓存组包)", static_cast<unsigned>(total));
     }
 
     std::string body = BuildReportBodyFromCache(books, 0, report_n);
@@ -319,7 +319,7 @@ bool PostOnceFromCache() {
 
 void WorkerTask(void* /*arg*/) {
     {
-        ESP_LOGI(TAG, "library/sync 上报: 开始");
+        ESP_LOGD(TAG, "library/sync 上报: 开始");
         if (!Board::GetInstance().IsNetworkReady()) {
             ESP_LOGW(TAG, "library/sync 上报: 跳过(网络未就绪)");
         } else if (!WaitWarmupReady()) {
@@ -327,7 +327,7 @@ void WorkerTask(void* /*arg*/) {
         } else {
             (void)PostOnceFromCache();
         }
-        ESP_LOGI(TAG, "library/sync 上报: 结束");
+        ESP_LOGD(TAG, "library/sync 上报: 结束");
     }
 
     SetPhase(Phase::kIdle);

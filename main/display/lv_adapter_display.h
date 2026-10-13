@@ -51,7 +51,6 @@ public:
     void ShowNotification(const char* notification, int duration_ms = 3000) override;
     void UpdateStatusBar(bool update_all = false) override;
     void SetPowerSaveMode(bool on) override;
-    void SetPreviewImage(const void* image);
 
     // 由各 Screen 在 Create 时绑定当前页控件；切页时覆盖。
     void BindStatusWidgets(lv_obj_t* network, lv_obj_t* mute, lv_obj_t* battery, lv_obj_t* status,
@@ -72,6 +71,9 @@ public:
     // 全屏 A2I1 关机画：FULL（C7 + BUSY + 0x3F）。
     void ShowPoweredOffScreen();
 
+    /** 欠压关机前全屏文案（全刷后冻结 flush） */
+    void ShowLowBatteryShutdownScreen();
+
     // 按文件名查 resources 分区；成功时 *mem 指向 mmap，不要 free。
     bool TryGetResource(const char* name, const uint8_t** mem, size_t* size) const;
 
@@ -82,8 +84,19 @@ public:
     // 退出待机后恢复 flush，并在下一帧底层画面走全刷。
     void WakeEpdFromStandby();
 
+    /** 待机 overlay 显示后：停 touch_feed（已在跑才生效；勿关全局 lv_timer，否则 lv_async dismiss 失效） */
+    void PauseStandbyBackgroundWork();
+    /** 退出待机 overlay：恢复 touch_feed */
+    void ResumeStandbyBackgroundWork();
+
     // 下一帧 LVGL flush 走全刷，用于大字更新等场景，减少局刷残影。
     void RequestNextFullRefresh();
+
+    /**
+     * @brief 下一帧强制双平面局刷：0x26=旧、0x24=新（PARTIAL）
+     * @note 正文沉浸进出真 4 灰 AA 时由 BookScreen 调用；开 AA 再跟灰 Overlay，关则 seed 后回 BW 局刷
+     */
+    void RequestDualPlanePartial();
 
     // 关机前调用 EPD Deep Sleep（0x10），需确保关机图已刷完。
     void SleepEpdForPowerOff();

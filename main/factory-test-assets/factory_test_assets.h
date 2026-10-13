@@ -3,7 +3,7 @@
 #include <string_view>
 
 // CMake EMBED_FILES：main/factory-test-assets/*.ogg
-// 符号名按文件名：_binary_<name>_ogg_{start,end}（与 Lang::Sounds 一致）
+// 符号名按文件名：_binary_<name>_ogg_{start,end}
 namespace FactoryTestAssets {
 
 extern const char ogg_factory_test_audio_start[] asm("_binary_factory_test_audio_ogg_start");

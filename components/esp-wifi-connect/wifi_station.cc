@@ -1,6 +1,5 @@
 #include "wifi_station.h"
 #include <cstring>
-#include <algorithm>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
@@ -98,6 +97,10 @@ void WifiStation::PauseForLp() {
     if (lp_paused_) {
         return;
     }
+    // 未持有 STA（如网络页已 Stop）时勿 stop 他人射频
+    if (station_netif_ == nullptr) {
+        return;
+    }
     if (timer_handle_ != nullptr) {
         esp_timer_stop(timer_handle_);
     }
@@ -112,7 +115,7 @@ void WifiStation::PauseForLp() {
             ESP_LOGW(TAG, "LP pause wifi stop: %s", esp_err_to_name(err));
         }
     }
-    ESP_LOGI(TAG, "STA paused for LP (radio off, netif kept)");
+    ESP_LOGD(TAG, "STA paused for LP (radio off, netif kept)");
 }
 
 esp_err_t WifiStation::ResumeFromLp() {
@@ -136,7 +139,7 @@ esp_err_t WifiStation::ResumeFromLp() {
         ESP_LOGE(TAG, "LP resume wifi start: %s", esp_err_to_name(err));
         return err;
     }
-    ESP_LOGI(TAG, "STA resumed from LP");
+    ESP_LOGD(TAG, "STA resumed from LP");
     return ESP_OK;
 }
 
@@ -217,33 +220,34 @@ void WifiStation::HandleScanResult() {
     esp_wifi_scan_get_ap_num(&ap_num);
     wifi_ap_record_t *ap_records = (wifi_ap_record_t *)malloc(ap_num * sizeof(wifi_ap_record_t));
     esp_wifi_scan_get_ap_records(&ap_num, ap_records);
-    // sort by rssi descending
-    std::sort(ap_records, ap_records + ap_num, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
-        return a.rssi > b.rssi;
-    });
 
-    auto& ssid_manager = SsidManager::GetInstance();
-    auto ssid_list = ssid_manager.GetSsidList();
-    for (int i = 0; i < ap_num; i++) {
-        auto ap_record = ap_records[i];
-        auto it = std::find_if(ssid_list.begin(), ssid_list.end(), [ap_record](const SsidItem& item) {
-            return strcmp((char *)ap_record.ssid, item.ssid.c_str()) == 0;
-        });
-        if (it != ssid_list.end()) {
-            ESP_LOGI(TAG, "Found AP: %s, BSSID: %02x:%02x:%02x:%02x:%02x:%02x, RSSI: %d, Channel: %d, Authmode: %d",
-                (char *)ap_record.ssid, 
-                ap_record.bssid[0], ap_record.bssid[1], ap_record.bssid[2],
-                ap_record.bssid[3], ap_record.bssid[4], ap_record.bssid[5],
-                ap_record.rssi, ap_record.primary, ap_record.authmode);
-            WifiApRecord record = {
-                .ssid = it->ssid,
-                .password = it->password,
-                .channel = ap_record.primary,
-                .authmode = ap_record.authmode
-            };
-            memcpy(record.bssid, ap_record.bssid, 6);
-            connect_queue_.push_back(record);
+    // 按 SsidManager 顺序入队（下标 0 = 默认）；同 SSID 多 BSSID 时取最强 RSSI
+    auto ssid_list = SsidManager::GetInstance().GetSsidList();
+    connect_queue_.clear();
+    for (const auto& item : ssid_list) {
+        const wifi_ap_record_t* best = nullptr;
+        for (uint16_t i = 0; i < ap_num; i++) {
+            if (strcmp(reinterpret_cast<const char*>(ap_records[i].ssid), item.ssid.c_str()) != 0) {
+                continue;
+            }
+            if (best == nullptr || ap_records[i].rssi > best->rssi) {
+                best = &ap_records[i];
+            }
         }
+        if (best == nullptr) {
+            continue;
+        }
+        ESP_LOGD(TAG, "Found AP: %s, BSSID: %02x:%02x:%02x:%02x:%02x:%02x, RSSI: %d, Channel: %d, Authmode: %d",
+                 item.ssid.c_str(), best->bssid[0], best->bssid[1], best->bssid[2], best->bssid[3],
+                 best->bssid[4], best->bssid[5], best->rssi, best->primary, best->authmode);
+        WifiApRecord record = {
+            .ssid = item.ssid,
+            .password = item.password,
+            .channel = best->primary,
+            .authmode = best->authmode,
+        };
+        memcpy(record.bssid, best->bssid, 6);
+        connect_queue_.push_back(record);
     }
     free(ap_records);
 
@@ -284,16 +288,22 @@ void WifiStation::StartConnect() {
 }
 
 int8_t WifiStation::GetRssi() {
-    // Get station info
-    wifi_ap_record_t ap_info;
-    ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&ap_info));
+    wifi_ap_record_t ap_info = {};
+    esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "GetRssi: %s", esp_err_to_name(err));
+        return 0;
+    }
     return ap_info.rssi;
 }
 
 uint8_t WifiStation::GetChannel() {
-    // Get station info
-    wifi_ap_record_t ap_info;
-    ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&ap_info));
+    wifi_ap_record_t ap_info = {};
+    esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "GetChannel: %s", esp_err_to_name(err));
+        return 0;
+    }
     return ap_info.primary;
 }
 

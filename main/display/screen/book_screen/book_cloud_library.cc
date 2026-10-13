@@ -1,4 +1,4 @@
-#include "book_cloud_library.h"
+#include "book_screen/book_cloud_library.h"
 
 #include "api_endpoints.h"
 #include "api_http.h"
@@ -26,15 +26,14 @@
 #include <unistd.h>
 
 namespace reader {
-namespace {
 
-constexpr const char* TAG = "BookCloud";
-constexpr int kHttpTimeoutMs = 30000;
-constexpr size_t kMaxBookDownloadBytes = 32 * 1024 * 1024;
-constexpr size_t kMaxCoverDownloadBytes = 512 * 1024; // coverImageUrl 落旁路，非书本体
+static constexpr const char* TAG = "BookCloud";
+static constexpr int kHttpTimeoutMs = 30000;
+static constexpr size_t kMaxBookDownloadBytes = 32 * 1024 * 1024;
+static constexpr size_t kMaxCoverDownloadBytes = 512 * 1024; // coverImageUrl 落旁路，非书本体
 
-/** 下载 coverImageUrl 等到内存；失败不抛，err_out 可空 */
-bool DownloadUrlToBuffer(const char* url, std::vector<uint8_t>& out, size_t max_bytes,
+// 下载 coverImageUrl 等到内存；失败不抛，err_out 可空
+static bool DownloadUrlToBuffer(const char* url, std::vector<uint8_t>& out, size_t max_bytes,
                          DownloadGate* gate, std::string& err_out) {
     out.clear();
     err_out.clear();
@@ -156,8 +155,6 @@ bool DownloadUrlToBuffer(const char* url, std::vector<uint8_t>& out, size_t max_
     }
     return true;
 }
-
-}  // namespace
 
 std::string CloudBookTask::FileExtension() const {
     if (format == "EBOOK_V1" || format == "EBOOK") {

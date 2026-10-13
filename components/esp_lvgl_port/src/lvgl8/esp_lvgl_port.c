@@ -217,7 +217,9 @@ static esp_err_t lvgl_port_tick_init(void)
     // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &lvgl_port_tick_increment,
+        .dispatch_method = ESP_TIMER_TASK,
         .name = "LVGL tick",
+        .skip_unhandled_events = true,
     };
     ESP_RETURN_ON_ERROR(esp_timer_create(&lvgl_tick_timer_args, &lvgl_port_ctx.tick_timer), TAG, "Creating LVGL timer filed!");
     return esp_timer_start_periodic(lvgl_port_ctx.tick_timer, lvgl_port_ctx.timer_period_ms * 1000);

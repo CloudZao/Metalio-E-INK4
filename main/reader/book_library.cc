@@ -135,26 +135,26 @@ void InvalidateBookLibraryCache() {
     s_cache.clear();
     s_cache.shrink_to_fit();
     s_cache_valid = false;
-    ESP_LOGI(TAG, "library cache invalidated");
+    ESP_LOGD(TAG, "library cache invalidated");
 }
 
 void ReplaceBookLibraryCache(std::vector<BookInfo> books) {
     std::lock_guard<std::mutex> lock(s_cache_mu);
     s_cache = std::move(books);
     s_cache_valid = true;
-    ESP_LOGI(TAG, "library cache replaced n=%u", static_cast<unsigned>(s_cache.size()));
+    ESP_LOGD(TAG, "library cache replaced n=%u", static_cast<unsigned>(s_cache.size()));
 }
 
 void OfferBookLibraryCache(const std::vector<BookInfo>& books) {
     std::lock_guard<std::mutex> lock(s_cache_mu);
     if (s_cache_valid) {
-        ESP_LOGI(TAG, "library cache offer skipped (valid n=%u)",
+        ESP_LOGD(TAG, "library cache offer skipped (valid n=%u)",
                  static_cast<unsigned>(s_cache.size()));
         return;
     }
     s_cache = books;
     s_cache_valid = true;
-    ESP_LOGI(TAG, "library cache offered n=%u", static_cast<unsigned>(s_cache.size()));
+    ESP_LOGD(TAG, "library cache offered n=%u", static_cast<unsigned>(s_cache.size()));
 }
 
 bool LoadBookLibrary(const char* dir, std::vector<BookInfo>& out) {
@@ -167,7 +167,7 @@ bool LoadBookLibrary(const char* dir, std::vector<BookInfo>& out) {
             std::lock_guard<std::mutex> lock(s_cache_mu);
             if (s_cache_valid) {
                 out = s_cache;
-                ESP_LOGI(TAG, "书库缓存命中(跳过扫盘): %u 本", static_cast<unsigned>(out.size()));
+                ESP_LOGD(TAG, "书库缓存命中(跳过扫盘): %u 本", static_cast<unsigned>(out.size()));
                 return true;
             }
         }
@@ -230,7 +230,100 @@ bool ScanBookLibrary(const char* dir, std::vector<BookInfo>& out) {
         }
         return a.title < b.title;
     });
-    ESP_LOGI(TAG, "书库扫描完成: %u 本 dir=%s", static_cast<unsigned>(out.size()), dir);
+    ESP_LOGD(TAG, "书库扫描完成: %u 本 dir=%s", static_cast<unsigned>(out.size()), dir);
+    return true;
+}
+
+bool ScanBookDirListing(const char* dir, std::vector<BookDirEntry>& out) {
+    out.clear();
+    if (dir == nullptr || dir[0] == '\0') {
+        dir = kDefaultBooksDir;
+    }
+    DIR* d = opendir(dir);
+    if (d == nullptr) {
+        ESP_LOGW(TAG, "cannot open listing %s", dir);
+        return false;
+    }
+
+    std::string prefix = dir;
+    if (!prefix.empty() && prefix.back() != '/') {
+        prefix.push_back('/');
+    }
+
+    std::vector<BookDirEntry> folders;
+    std::vector<BookDirEntry> books;
+    size_t entries_seen = 0;
+    while (true) {
+        errno = 0;
+        dirent* ent = readdir(d);
+        if (ent == nullptr) {
+            break;
+        }
+        if (ent->d_name[0] == '.') {
+            continue;
+        }
+        if ((++entries_seen & 15u) == 0u) {
+            vTaskDelay(1);
+        }
+
+        const BookFormat fmt = DetectFormatByPath(ent->d_name);
+        const std::string ext = ToLowerExt(ent->d_name);
+        // 旁路文件直接跳过，避免无意义 stat
+        if (fmt == BookFormat::kUnknown && IsSidecarExt(ext)) {
+            continue;
+        }
+
+        const std::string path = prefix + ent->d_name;
+        struct stat st {};
+        if (stat(path.c_str(), &st) != 0) {
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            BookDirEntry e;
+            e.kind = BookDirEntry::Kind::kFolder;
+            e.name = ent->d_name;
+            e.path = path;
+            folders.push_back(std::move(e));
+            continue;
+        }
+
+        if (!S_ISREG(st.st_mode) || fmt == BookFormat::kUnknown) {
+            // 非书籍类型自动过滤，不进列表
+            continue;
+        }
+
+        BookDirEntry e;
+        e.kind = BookDirEntry::Kind::kBook;
+        e.name = ent->d_name;
+        e.path = path;
+        e.book.path = path;
+        e.book.title = TitleFromPath(ent->d_name);
+        e.book.format = fmt;
+        e.book.file_size = static_cast<size_t>(st.st_size);
+        e.book.mtime = static_cast<int64_t>(st.st_mtime);
+        books.push_back(std::move(e));
+    }
+    closedir(d);
+
+    std::sort(folders.begin(), folders.end(),
+              [](const BookDirEntry& a, const BookDirEntry& b) { return a.name < b.name; });
+    std::sort(books.begin(), books.end(), [](const BookDirEntry& a, const BookDirEntry& b) {
+        if (a.book.mtime != b.book.mtime) {
+            return a.book.mtime > b.book.mtime;
+        }
+        return a.name < b.name;
+    });
+
+    out.reserve(folders.size() + books.size());
+    for (auto& f : folders) {
+        out.push_back(std::move(f));
+    }
+    for (auto& b : books) {
+        out.push_back(std::move(b));
+    }
+    ESP_LOGD(TAG, "dir listing: %u folders + %u books dir=%s",
+             static_cast<unsigned>(folders.size()), static_cast<unsigned>(books.size()), dir);
     return true;
 }
 

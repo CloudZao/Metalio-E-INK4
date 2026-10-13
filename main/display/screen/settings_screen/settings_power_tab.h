@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 
-// 设置 → 功耗：空闲降频 / 保网时长 / 浅睡待机 / 自动关机（含不自动关机）
+/** @brief 构建设置→功耗页选项 */
 void SettingsPowerTab_Build(lv_obj_t* page);
+/** @brief 重置功耗页 UI 指针 */
 void SettingsPowerTab_Reset();

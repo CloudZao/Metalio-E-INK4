@@ -317,7 +317,13 @@ bool WriteEf(const char* out_path, int line_height, int base_line,
     }
     fsync(fileno(f));
     fclose(f);
-    if (!ok || rename(tmp.c_str(), out_path) != 0) {
+    if (!ok) {
+        unlink(tmp.c_str());
+        return false;
+    }
+    // FATFS 的 f_rename 不覆盖已存在目标（FR_EXIST）：先删目标，实现「同名覆盖」语义。
+    unlink(out_path);
+    if (rename(tmp.c_str(), out_path) != 0) {
         unlink(tmp.c_str());
         return false;
     }
@@ -449,14 +455,9 @@ bool RenderOneSize(FT_Face face, const std::vector<uint32_t>& cps, int size_px,
     return true;
 }
 
-void Worker(void* arg) {
-    Job* job = static_cast<Job*>(arg);
-    if (job == nullptr) {
-        Fail("null job");
-        ExitWorker();
-    }
-
-    // 统一出口：保证 face / lib / job 只释放一次，且任务栈走 WithCaps 回收。
+/** 转换主流程：正常返回，确保 fam/cps/face/lib/job 全部释放（析构 + release）。 */
+void RunWorker(Job* job) {
+    // 统一出口：保证 face / lib / job 只释放一次。
     FT_Library lib = nullptr;
     FT_Face face = nullptr;
     auto release = [&]() {
@@ -477,7 +478,7 @@ void Worker(void* arg) {
     if (!LoadCharset(job->template_path.c_str(), &cps)) {
         Fail("bad template ef");
         release();
-        ExitWorker();
+        return;
     }
     ESP_LOGI(TAG, "charset %u cps from %s", static_cast<unsigned>(cps.size()),
              job->template_path.c_str());
@@ -486,12 +487,12 @@ void Worker(void* arg) {
         lib = nullptr;  // 半初始化 library 不可 FT_Done_FreeType
         Fail("FT_Init_FreeType");
         release();
-        ExitWorker();
+        return;
     }
     if (!OpenFace(lib, job->ttf_path.c_str(), &face)) {
         Fail("open ttf failed");
         release();
-        ExitWorker();
+        return;
     }
 
     const uint32_t total = static_cast<uint32_t>(cps.size()) * static_cast<uint32_t>(job->size_count);
@@ -517,6 +518,18 @@ void Worker(void* arg) {
     } else {
         FinishOk();
     }
+}
+
+void Worker(void* arg) {
+    Job* job = static_cast<Job*>(arg);
+    if (job == nullptr) {
+        Fail("null job");
+        ExitWorker();
+    }
+    // 转换流程正常返回，栈上 std::string/std::vector 析构在此完成，
+    // 避免 vTaskDeleteWithCaps 不展开 C++ 栈导致 heap 缓冲泄漏。
+    RunWorker(job);
+    // 任务栈走 WithCaps 回收（见 xTaskCreatePinnedToCoreWithCaps）。
     ExitWorker();
 }
 

@@ -1,16 +1,22 @@
 #pragma once
 
-// 板载 BOOT/POWER 键事件分发，负责短按、长按、双击和待机管理。
+/** @brief BOOT 键按下 */
 void BootKey_OnPressDown();
+/** @brief BOOT 键抬起 */
 void BootKey_OnPressUp();
+/** @brief BOOT 键短按单击 */
 void BootKey_OnClick();
+/** @brief BOOT 键双击 */
 void BootKey_OnDoubleClick();
+/** @brief BOOT 键长按 */
 void BootKey_OnLongPress();
 
-// 非待机页按电源键进入低功耗待机，长按则关机。
+/** @brief 电源键短按：非待机页进入低功耗待机 */
 void PowerKey_OnClick();
+/** @brief 电源键长按：请求关机 */
 void PowerKey_OnLongPress();
 
-// 当前按键状态，用于长按、短按互斥和页面 hold-through。
+/** @brief 当前 BOOT 键是否仍按住 */
 bool BootKey_IsHeld();
+/** @brief 本轮按下是否已触发过长按（用于抑制短按） */
 bool BootKey_DidLongPress();

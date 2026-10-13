@@ -27,39 +27,38 @@
 #include <freertos/task.h>
 #include <lvgl.h>
 
-namespace {
 
-constexpr const char* TAG = "SettingsAbout";
-constexpr lv_coord_t kInfoRowH = 72;
-constexpr lv_coord_t kInfoRowGap = 8;
-constexpr lv_coord_t kInfoRowPadH = 12;
-constexpr lv_coord_t kInfoRowPadV = 8;
+static constexpr const char* TAG = "SettingsAbout";
+static constexpr lv_coord_t kInfoRowH = 72;
+static constexpr lv_coord_t kInfoRowGap = 8;
+static constexpr lv_coord_t kInfoRowPadH = 12;
+static constexpr lv_coord_t kInfoRowPadV = 8;
 
-std::atomic<bool> s_tab_alive{false};
-std::atomic<uint32_t> s_check_gen{0};
-std::atomic<bool> s_check_busy{false};
+static std::atomic<bool> s_tab_alive{false};
+static std::atomic<uint32_t> s_check_gen{0};
+static std::atomic<bool> s_check_busy{false};
 
-struct InfoItem {
+struct SettingsAboutInfoItem {
     const char* label;
     char value[96];
     bool firmware_row = false;
 };
 
-enum class CheckResultKind : uint8_t {
+enum class SettingsAboutCheckResultKind : uint8_t {
     Failed = 0,
     Latest = 1,
     NewVersion = 2,
 };
 
-struct CheckResultMsg {
+struct SettingsAboutCheckResultMsg {
     uint32_t gen = 0;
-    CheckResultKind kind = CheckResultKind::Failed;
+    SettingsAboutCheckResultKind kind = SettingsAboutCheckResultKind::Failed;
     char current[48] = {};
     char next[48] = {};
     char url[256] = {};
 };
 
-void CollectInfoItems(InfoItem* items, int* count) {
+static void CollectInfoItems(SettingsAboutInfoItem* items, int* count) {
     const auto* app_desc = esp_app_get_description();
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
@@ -117,16 +116,15 @@ void CollectInfoItems(InfoItem* items, int* count) {
 
     *count = idx;
 }
-
-void SetStatusTip(const char* text) {
+static void SetStatusTip(const char* text) {
     auto* display = Board::GetInstance().GetDisplay();
     if (display != nullptr && text != nullptr) {
         display->SetStatus(text);
     }
 }
 
-void AsyncApplyCheckResult(void* p) {
-    auto* msg = static_cast<CheckResultMsg*>(p);
+static void AsyncApplyCheckResult(void* p) {
+    auto* msg = static_cast<SettingsAboutCheckResultMsg*>(p);
     if (msg == nullptr) {
         return;
     }
@@ -140,13 +138,13 @@ void AsyncApplyCheckResult(void* p) {
         return;
     }
 
-    if (msg->kind == CheckResultKind::Failed) {
+    if (msg->kind == SettingsAboutCheckResultKind::Failed) {
         SetStatusTip(Lang::Strings::OTA_CHECK_FAILED);
         s_check_busy.store(false, std::memory_order_release);
         delete msg;
         return;
     }
-    if (msg->kind == CheckResultKind::Latest) {
+    if (msg->kind == SettingsAboutCheckResultKind::Latest) {
         SetStatusTip(Lang::Strings::OTA_ALREADY_LATEST);
         s_check_busy.store(false, std::memory_order_release);
         delete msg;
@@ -181,15 +179,15 @@ void AsyncApplyCheckResult(void* p) {
     }
 }
 
-void CheckFirmwareWorker(void* /*arg*/) {
-    auto* msg = new (std::nothrow) CheckResultMsg{};
+static void CheckFirmwareWorker(void* /*arg*/) {
+    auto* msg = new (std::nothrow) SettingsAboutCheckResultMsg{};
     if (msg == nullptr) {
         s_check_busy.store(false, std::memory_order_release);
         vTaskDelete(nullptr);
         return;
     }
     msg->gen = s_check_gen.load(std::memory_order_acquire);
-    msg->kind = CheckResultKind::Failed;
+    msg->kind = SettingsAboutCheckResultKind::Failed;
 
     auto& board = Board::GetInstance();
     if (!board.EnsureNetworkReady()) {
@@ -200,11 +198,11 @@ void CheckFirmwareWorker(void* /*arg*/) {
         if (err == ESP_OK) {
             std::snprintf(msg->current, sizeof(msg->current), "%s", ota.GetCurrentVersion().c_str());
             if (ota.HasNewVersion()) {
-                msg->kind = CheckResultKind::NewVersion;
+                msg->kind = SettingsAboutCheckResultKind::NewVersion;
                 std::snprintf(msg->next, sizeof(msg->next), "%s", ota.GetFirmwareVersion().c_str());
                 std::snprintf(msg->url, sizeof(msg->url), "%s", ota.GetFirmwareUrl().c_str());
             } else {
-                msg->kind = CheckResultKind::Latest;
+                msg->kind = SettingsAboutCheckResultKind::Latest;
             }
         } else {
             ESP_LOGW(TAG, "CheckVersion failed: %s", esp_err_to_name(err));
@@ -223,7 +221,7 @@ void CheckFirmwareWorker(void* /*arg*/) {
     vTaskDelete(nullptr);
 }
 
-void OnFirmwareRowClicked(lv_event_t* e) {
+static void OnFirmwareRowClicked(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
@@ -250,7 +248,7 @@ void OnFirmwareRowClicked(lv_event_t* e) {
     }
 }
 
-lv_obj_t* CreateInfoRow(lv_obj_t* parent, const InfoItem& item, bool with_divider) {
+static lv_obj_t* CreateInfoRow(lv_obj_t* parent, const SettingsAboutInfoItem& item, bool with_divider) {
     lv_obj_t* row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_width(row, lv_pct(100));
@@ -299,7 +297,6 @@ lv_obj_t* CreateInfoRow(lv_obj_t* parent, const InfoItem& item, bool with_divide
     return row;
 }
 
-}  // namespace
 
 void SettingsAboutTab_Reset() {
     s_tab_alive.store(false, std::memory_order_release);
@@ -314,7 +311,7 @@ void SettingsAboutTab_Build(lv_obj_t* page) {
     s_tab_alive.store(true, std::memory_order_release);
     s_check_busy.store(false, std::memory_order_release);
 
-    InfoItem items[8];
+    SettingsAboutInfoItem items[8];
     int count = 0;
     CollectInfoItems(items, &count);
 

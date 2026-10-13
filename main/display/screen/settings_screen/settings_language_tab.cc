@@ -14,42 +14,40 @@
 #include <cstring>
 #include <string>
 
-namespace {
 
-struct LangOption {
+struct SettingsLangOption {
     const char* code;
     const char* (*title)();
 };
 
-const char* TitleZh() {
+static const char* TitleZh() {
     return Lang::Strings::SETTINGS_LANG_ZH_CN;
 }
-
-const char* TitleEn() {
+static const char* TitleEn() {
     return Lang::Strings::SETTINGS_LANG_EN_US;
 }
 
-constexpr LangOption kLangOptions[] = {
+constexpr SettingsLangOption kLangOptions[] = {
     {"zh-CN", TitleZh},
     {"en-US", TitleEn},
 };
 constexpr int kLangOptionCount = sizeof(kLangOptions) / sizeof(kLangOptions[0]);
 
-struct LangUi {
+struct SettingsLangUi {
     lv_obj_t* btns[kLangOptionCount] = {};
     lv_obj_t* current_lbl = nullptr;
 };
 
-LangUi s_ui;
+SettingsLangUi s_ui;
 
-const char* CurrentLabelText() {
+static const char* CurrentLabelText() {
     if (std::strcmp(Lang::CODE, "zh-CN") == 0) {
         return Lang::Strings::SETTINGS_LANG_CURRENT_ZH;
     }
     return Lang::Strings::SETTINGS_LANG_CURRENT_EN;
 }
 
-void RefreshLangOptions() {
+static void RefreshLangOptions() {
     for (int i = 0; i < kLangOptionCount; ++i) {
         if (s_ui.btns[i] != nullptr) {
             SettingsStyleSelectable(s_ui.btns[i], lv_obj_get_child(s_ui.btns[i], 0),
@@ -61,7 +59,7 @@ void RefreshLangOptions() {
     }
 }
 
-void RefreshStatusAfterLanguageChange() {
+static void RefreshStatusAfterLanguageChange() {
     auto* display = Board::GetInstance().GetDisplay();
     if (display == nullptr) {
         return;
@@ -97,7 +95,7 @@ void RefreshStatusAfterLanguageChange() {
     display->UpdateStatusBar(true);
 }
 
-void OnLangOptionClicked(lv_event_t* e) {
+static void OnLangOptionClicked(lv_event_t* e) {
     const char* code = static_cast<const char*>(lv_event_get_user_data(e));
     if (code == nullptr || std::strcmp(Lang::CODE, code) == 0) {
         return;
@@ -113,7 +111,6 @@ void OnLangOptionClicked(lv_event_t* e) {
     SettingsScreen::ReloadAfterLanguageChange();
 }
 
-}  // namespace
 
 void SettingsLanguageTab_Reset() {
     s_ui = {};

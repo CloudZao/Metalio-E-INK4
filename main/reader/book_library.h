@@ -1,10 +1,11 @@
 #pragma once
 
-#include <string>
-#include <vector>
-
 #include "reader_types.h"
 #include "sd_paths.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
 
 namespace reader {
 
@@ -31,5 +32,20 @@ BookFormat DetectFormatByPath(const char* path);
 
 // 从路径取无扩展名的文件名作为默认标题。
 std::string TitleFromPath(const char* path);
+
+/** 书架列表模式：单层目录项（文件夹或已识别书籍）。 */
+struct BookDirEntry {
+    enum class Kind : uint8_t { kFolder = 0, kBook };
+    Kind kind = Kind::kFolder;
+    std::string name;  // 显示名：文件夹为目录名；书籍为带后缀文件名
+    std::string path;  // 绝对路径
+    BookInfo book;     // kind==kBook 时有效
+};
+
+/**
+ * @brief 扫描单层目录：文件夹 + 支持的书籍；自动跳过旁路/未知类型文件
+ * @note 文件夹在前（名升序），书籍在后（mtime 新→旧，同时间按名）
+ */
+bool ScanBookDirListing(const char* dir, std::vector<BookDirEntry>& out);
 
 }  // namespace reader

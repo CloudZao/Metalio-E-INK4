@@ -16,6 +16,8 @@ enum class LangStringId : size_t {
     BATTERY_FULL,
     BATTERY_LOW,
     BATTERY_NEED_CHARGE,
+    BATTERY_UV_SHUTDOWN,
+    BOOK_ANTIALIAS,
     BOOK_BAD_ARG,
     BOOK_BLANK,
     BOOK_BODY,
@@ -44,6 +46,10 @@ enum class LangStringId : size_t {
     BOOK_FONT_EMPTY,
     BOOK_FONT_NAME_INVALID,
     BOOK_FONT_TITLE,
+    BOOK_FOOTER_BATTERY,
+    BOOK_FOOTER_PROGRESS,
+    BOOK_FOOTER_TIME,
+    BOOK_FOOTER_TITLE,
     BOOK_IMAGE_PLACEHOLDER,
     BOOK_LAYOUT_BUSY,
     BOOK_LAYOUT_DONE,
@@ -68,6 +74,10 @@ enum class LangStringId : size_t {
     BOOK_OPEN_FAILED_EPUB,
     BOOK_OPEN_FAILED_TASK,
     BOOK_OPEN_FAILED_TXT,
+    BOOK_ORIENT,
+    BOOK_ORIENT_LAND_LEFT,
+    BOOK_ORIENT_LAND_RIGHT,
+    BOOK_ORIENT_PORTRAIT,
     BOOK_OUT_OF_MEMORY,
     BOOK_PAGE_LOAD_FAILED,
     BOOK_PATH_INVALID,
@@ -87,6 +97,16 @@ enum class LangStringId : size_t {
     BOOK_START,
     BOOK_STORAGE_UNAVAIL,
     BOOK_SYNC_EMPTY_BODY,
+    BOOK_TAP_ZONES,
+    BOOK_TAP_ZONES_PICK,
+    BOOK_TAP_ZONES_RESET,
+    BOOK_TAP_ZONES_TITLE,
+    BOOK_TAP_ZONE_BACK,
+    BOOK_TAP_ZONE_FULL_REFRESH,
+    BOOK_TAP_ZONE_MENU,
+    BOOK_TAP_ZONE_NEXT,
+    BOOK_TAP_ZONE_NONE,
+    BOOK_TAP_ZONE_PREV,
     BOOK_TOC,
     BOOK_TOC_EMPTY,
     BOOK_TOC_PAGE_FMT,
@@ -263,6 +283,7 @@ enum class LangStringId : size_t {
     NETWORK_CONNECTED_FMT,
     NETWORK_CONNECTING_FMT,
     NETWORK_CONNECT_FAIL,
+    NETWORK_CONNECT_FAIL_REFRESH,
     NETWORK_CONNECT_TASK_FAIL,
     NETWORK_CONNECT_TIMEOUT,
     NETWORK_CONNECT_TIMEOUT_HINT,
@@ -305,6 +326,7 @@ enum class LangStringId : size_t {
     OTA_MANUAL,
     OTA_NEW_VER_FMT,
     OTA_REMIND_LATER,
+    OTA_SD_CONFIRM_FMT,
     OTA_SUCCESS_REBOOT,
     OTA_TITLE,
     OTA_UPGRADE,
@@ -412,18 +434,42 @@ enum class LangStringId : size_t {
     SETTINGS_CONV_TITLE,
     SETTINGS_CONV_TTS_OFF,
     SETTINGS_CONV_TTS_ON,
+    SETTINGS_HAPTIC_CURRENT_MEDIUM,
     SETTINGS_HAPTIC_CURRENT_OFF,
     SETTINGS_HAPTIC_CURRENT_ON,
+    SETTINGS_HAPTIC_CURRENT_STRONG,
+    SETTINGS_HAPTIC_CURRENT_WEAK,
     SETTINGS_HAPTIC_HINT,
+    SETTINGS_HAPTIC_INTENSITY_TITLE,
+    SETTINGS_HAPTIC_MEDIUM,
     SETTINGS_HAPTIC_OFF,
     SETTINGS_HAPTIC_ON,
+    SETTINGS_HAPTIC_STRONG,
     SETTINGS_HAPTIC_TITLE,
+    SETTINGS_HAPTIC_WEAK,
     SETTINGS_LANG_CURRENT_EN,
     SETTINGS_LANG_CURRENT_ZH,
     SETTINGS_LANG_EN_US,
     SETTINGS_LANG_HINT,
     SETTINGS_LANG_TITLE,
     SETTINGS_LANG_ZH_CN,
+    SETTINGS_LOG_CONNECTING_NET,
+    SETTINGS_LOG_CURRENT_OFF,
+    SETTINGS_LOG_CURRENT_ON,
+    SETTINGS_LOG_HINT,
+    SETTINGS_LOG_HINT_OFF,
+    SETTINGS_LOG_NEED_NET,
+    SETTINGS_LOG_OFF,
+    SETTINGS_LOG_ON,
+    SETTINGS_LOG_TITLE,
+    SETTINGS_LOG_UPLOAD,
+    SETTINGS_LOG_UPLOADING,
+    SETTINGS_LOG_UPLOADING_NAME_FMT,
+    SETTINGS_LOG_UPLOAD_BUSY,
+    SETTINGS_LOG_UPLOAD_COUNT_FMT,
+    SETTINGS_LOG_UPLOAD_FAIL,
+    SETTINGS_LOG_UPLOAD_NO_FILE,
+    SETTINGS_LOG_UPLOAD_OK,
     SETTINGS_NET_AP_TASK_FAIL,
     SETTINGS_NET_BOARD_NO_AP,
     SETTINGS_NET_CFUN0,
@@ -458,10 +504,16 @@ enum class LangStringId : size_t {
     SETTINGS_NET_WIFI_CFG_TITLE,
     SETTINGS_POWER_10_MIN,
     SETTINGS_POWER_120_SEC,
+    SETTINGS_POWER_12_HOUR,
+    SETTINGS_POWER_15_HOUR,
+    SETTINGS_POWER_1_HOUR,
     SETTINGS_POWER_30_MIN,
     SETTINGS_POWER_30_SEC,
+    SETTINGS_POWER_3_HOUR,
     SETTINGS_POWER_3_MIN,
     SETTINGS_POWER_60_SEC,
+    SETTINGS_POWER_6_HOUR,
+    SETTINGS_POWER_9_HOUR,
     SETTINGS_POWER_IDLE_MHZ_HINT,
     SETTINGS_POWER_IDLE_MHZ_TITLE,
     SETTINGS_POWER_NET_GRACE_HINT,
@@ -471,6 +523,7 @@ enum class LangStringId : size_t {
     SETTINGS_POWER_OFF_TITLE,
     SETTINGS_POWER_STANDBY_HINT,
     SETTINGS_POWER_STANDBY_TITLE,
+    SETTINGS_STORAGE_CAP_BUSY,
     SETTINGS_STORAGE_CAP_DASH,
     SETTINGS_STORAGE_CAP_EXPORT,
     SETTINGS_STORAGE_CAP_FAIL,
@@ -499,6 +552,7 @@ enum class LangStringId : size_t {
     SETTINGS_TAB_CONVERSATION,
     SETTINGS_TAB_HAPTIC,
     SETTINGS_TAB_LANGUAGE,
+    SETTINGS_TAB_LOG,
     SETTINGS_TAB_NETWORK,
     SETTINGS_TAB_POWER,
     SETTINGS_TAB_STORAGE,
@@ -725,6 +779,7 @@ enum class LangStringId : size_t {
     VERSION,
     VOICE_STARTING_NET,
     VOLUME,
+    WALLPAPER_ADJUST,
     WALLPAPER_CHIP_SHUTDOWN,
     WALLPAPER_CHIP_STANDBY,
     WALLPAPER_DECODE_FAIL,
@@ -737,12 +792,20 @@ enum class LangStringId : size_t {
     WALLPAPER_FILE_INVALID,
     WALLPAPER_FILE_MISSING,
     WALLPAPER_LOADING,
+    WALLPAPER_MIRROR_H,
     WALLPAPER_NAME_INVALID,
     WALLPAPER_NO_SD,
+    WALLPAPER_OVERWRITE,
     WALLPAPER_PATH_INVALID,
     WALLPAPER_PREVIEW_FAIL,
     WALLPAPER_PREVIEW_OOM,
     WALLPAPER_PREVIEW_START_FAIL,
+    WALLPAPER_ROTATE_LEFT,
+    WALLPAPER_ROTATE_RIGHT,
+    WALLPAPER_SAVE,
+    WALLPAPER_SAVE_AS,
+    WALLPAPER_SAVE_FAIL,
+    WALLPAPER_SAVING,
     WALLPAPER_SELECTED_FMT,
     WALLPAPER_SET_SHUTDOWN,
     WALLPAPER_SET_STANDBY,
@@ -761,13 +824,15 @@ static const char* const kLiterals_en_us[] = {
         "Battery full",  /* BATTERY_FULL */
         "Low battery",  /* BATTERY_LOW */
         "Low battery, please charge",  /* BATTERY_NEED_CHARGE */
+        "Battery voltage too low. Shutting down. Please charge.",  /* BATTERY_UV_SHUTDOWN */
+        "Anti-aliasing",  /* BOOK_ANTIALIAS */
         "Invalid argument",  /* BOOK_BAD_ARG */
         "(Blank)",  /* BOOK_BLANK */
         "Body",  /* BOOK_BODY */
         "Cancelled",  /* BOOK_CANCELLED */
         "Ch.%d",  /* BOOK_CHAPTER_FMT */
         "(No text in chapter)",  /* BOOK_CHAPTER_NO_TEXT */
-        "Chapter progress",  /* BOOK_CHAPTER_PROGRESS */
+        "Footer info",  /* BOOK_CHAPTER_PROGRESS */
         "Checksum failed",  /* BOOK_CHECKSUM_FAIL */
         "Connection failed",  /* BOOK_CONN_FAIL */
         "Continue",  /* BOOK_CONTINUE */
@@ -789,6 +854,10 @@ static const char* const kLiterals_en_us[] = {
         "No fonts",  /* BOOK_FONT_EMPTY */
         "Invalid filename",  /* BOOK_FONT_NAME_INVALID */
         "Font",  /* BOOK_FONT_TITLE */
+        "Battery",  /* BOOK_FOOTER_BATTERY */
+        "Progress",  /* BOOK_FOOTER_PROGRESS */
+        "Time",  /* BOOK_FOOTER_TIME */
+        "Chapter",  /* BOOK_FOOTER_TITLE */
         "[Image]",  /* BOOK_IMAGE_PLACEHOLDER */
         "Building",  /* BOOK_LAYOUT_BUSY */
         "Done",  /* BOOK_LAYOUT_DONE */
@@ -813,6 +882,10 @@ static const char* const kLiterals_en_us[] = {
         "Open failed\nCheck EPUB integrity",  /* BOOK_OPEN_FAILED_EPUB */
         "Open failed\nCannot start parse task",  /* BOOK_OPEN_FAILED_TASK */
         "Open failed\nTXT too large or out of memory",  /* BOOK_OPEN_FAILED_TXT */
+        "Orientation",  /* BOOK_ORIENT */
+        "Left",  /* BOOK_ORIENT_LAND_LEFT */
+        "Right",  /* BOOK_ORIENT_LAND_RIGHT */
+        "Port.",  /* BOOK_ORIENT_PORTRAIT */
         "Out of memory",  /* BOOK_OUT_OF_MEMORY */
         "Cannot load page",  /* BOOK_PAGE_LOAD_FAILED */
         "Invalid path",  /* BOOK_PATH_INVALID */
@@ -832,6 +905,16 @@ static const char* const kLiterals_en_us[] = {
         "Start reading",  /* BOOK_START */
         "Storage unavailable",  /* BOOK_STORAGE_UNAVAIL */
         "Empty request body",  /* BOOK_SYNC_EMPTY_BODY */
+        "Tap zones",  /* BOOK_TAP_ZONES */
+        "Choose action",  /* BOOK_TAP_ZONES_PICK */
+        "Reset",  /* BOOK_TAP_ZONES_RESET */
+        "Tap zones",  /* BOOK_TAP_ZONES_TITLE */
+        "Back",  /* BOOK_TAP_ZONE_BACK */
+        "Full refresh",  /* BOOK_TAP_ZONE_FULL_REFRESH */
+        "Menu",  /* BOOK_TAP_ZONE_MENU */
+        "Next",  /* BOOK_TAP_ZONE_NEXT */
+        "None",  /* BOOK_TAP_ZONE_NONE */
+        "Prev",  /* BOOK_TAP_ZONE_PREV */
         "Contents",  /* BOOK_TOC */
         "No contents",  /* BOOK_TOC_EMPTY */
         "Contents %d/%d",  /* BOOK_TOC_PAGE_FMT */
@@ -1008,6 +1091,7 @@ static const char* const kLiterals_en_us[] = {
         "Connected to %s",  /* NETWORK_CONNECTED_FMT */
         "Connecting to %s …",  /* NETWORK_CONNECTING_FMT */
         "Connection failed",  /* NETWORK_CONNECT_FAIL */
+        "Please refresh the Wi-Fi list",  /* NETWORK_CONNECT_FAIL_REFRESH */
         "Cannot start connect task",  /* NETWORK_CONNECT_TASK_FAIL */
         "Connection timed out",  /* NETWORK_CONNECT_TIMEOUT */
         "Could not connect within 15s; retry",  /* NETWORK_CONNECT_TIMEOUT_HINT */
@@ -1050,6 +1134,7 @@ static const char* const kLiterals_en_us[] = {
         "Manual upgrade",  /* OTA_MANUAL */
         "Latest  %s",  /* OTA_NEW_VER_FMT */
         "Remind me next time",  /* OTA_REMIND_LATER */
+        "New firmware on SD card\nCurrent version %s",  /* OTA_SD_CONFIRM_FMT */
         "Upgrade OK, rebooting",  /* OTA_SUCCESS_REBOOT */
         "Upgrading system",  /* OTA_TITLE */
         "OTA Upgrade",  /* OTA_UPGRADE */
@@ -1157,18 +1242,42 @@ static const char* const kLiterals_en_us[] = {
         "Voice playback",  /* SETTINGS_CONV_TITLE */
         "TTS off",  /* SETTINGS_CONV_TTS_OFF */
         "TTS on",  /* SETTINGS_CONV_TTS_ON */
+        "Current: Medium",  /* SETTINGS_HAPTIC_CURRENT_MEDIUM */
         "Current: Off",  /* SETTINGS_HAPTIC_CURRENT_OFF */
         "Current: On",  /* SETTINGS_HAPTIC_CURRENT_ON */
+        "Current: Strong",  /* SETTINGS_HAPTIC_CURRENT_STRONG */
+        "Current: Weak",  /* SETTINGS_HAPTIC_CURRENT_WEAK */
         "UI buttons and cover keys",  /* SETTINGS_HAPTIC_HINT */
+        "Haptic strength",  /* SETTINGS_HAPTIC_INTENSITY_TITLE */
+        "Medium",  /* SETTINGS_HAPTIC_MEDIUM */
         "Off",  /* SETTINGS_HAPTIC_OFF */
         "On",  /* SETTINGS_HAPTIC_ON */
+        "Strong",  /* SETTINGS_HAPTIC_STRONG */
         "Button haptic",  /* SETTINGS_HAPTIC_TITLE */
+        "Weak",  /* SETTINGS_HAPTIC_WEAK */
         "Current: English",  /* SETTINGS_LANG_CURRENT_EN */
         "Current: 简体中文",  /* SETTINGS_LANG_CURRENT_ZH */
         "English",  /* SETTINGS_LANG_EN_US */
         "Takes effect immediately",  /* SETTINGS_LANG_HINT */
         "Language",  /* SETTINGS_LANG_TITLE */
         "简体中文",  /* SETTINGS_LANG_ZH_CN */
+        "Connecting…",  /* SETTINGS_LOG_CONNECTING_NET */
+        "Current: Off",  /* SETTINGS_LOG_CURRENT_OFF */
+        "Current: On",  /* SETTINGS_LOG_CURRENT_ON */
+        "When on:\nRuntime log writes to\nmetalio/e-ink/logs/metalio_\nlogs.txt\nCrash log writes to\nmetalio/e-ink/logs/metalio_\ncoredump.elf",  /* SETTINGS_LOG_HINT */
+        "Off stops writing",  /* SETTINGS_LOG_HINT_OFF */
+        "Set up network first",  /* SETTINGS_LOG_NEED_NET */
+        "Off",  /* SETTINGS_LOG_OFF */
+        "On",  /* SETTINGS_LOG_ON */
+        "Device log",  /* SETTINGS_LOG_TITLE */
+        "Upload log",  /* SETTINGS_LOG_UPLOAD */
+        "Uploading…",  /* SETTINGS_LOG_UPLOADING */
+        "Uploading %s",  /* SETTINGS_LOG_UPLOADING_NAME_FMT */
+        "Busy, please wait",  /* SETTINGS_LOG_UPLOAD_BUSY */
+        "Uploaded %d / %d",  /* SETTINGS_LOG_UPLOAD_COUNT_FMT */
+        "Upload failed",  /* SETTINGS_LOG_UPLOAD_FAIL */
+        "Log file not found",  /* SETTINGS_LOG_UPLOAD_NO_FILE */
+        "Upload succeeded",  /* SETTINGS_LOG_UPLOAD_OK */
         "Cannot open Wi-Fi setup",  /* SETTINGS_NET_AP_TASK_FAIL */
         "This board has no Wi-Fi setup",  /* SETTINGS_NET_BOARD_NO_AP */
         "RF off…\nAT+CFUN=0",  /* SETTINGS_NET_CFUN0 */
@@ -1203,21 +1312,28 @@ static const char* const kLiterals_en_us[] = {
         "Wi-Fi network",  /* SETTINGS_NET_WIFI_CFG_TITLE */
         "10 min",  /* SETTINGS_POWER_10_MIN */
         "120 s",  /* SETTINGS_POWER_120_SEC */
+        "12 h",  /* SETTINGS_POWER_12_HOUR */
+        "15 h",  /* SETTINGS_POWER_15_HOUR */
+        "1 h",  /* SETTINGS_POWER_1_HOUR */
         "30 min",  /* SETTINGS_POWER_30_MIN */
         "30 s",  /* SETTINGS_POWER_30_SEC */
+        "3 h",  /* SETTINGS_POWER_3_HOUR */
         "3 min",  /* SETTINGS_POWER_3_MIN */
         "60 s",  /* SETTINGS_POWER_60_SEC */
+        "6 h",  /* SETTINGS_POWER_6_HOUR */
+        "9 h",  /* SETTINGS_POWER_9_HOUR */
         "CPU clock when idle",  /* SETTINGS_POWER_IDLE_MHZ_HINT */
         "Idle CPU (def 240 MHz)",  /* SETTINGS_POWER_IDLE_MHZ_TITLE */
         "How long to stay online after last need",  /* SETTINGS_POWER_NET_GRACE_HINT */
         "Keep-alive (def 30 s)",  /* SETTINGS_POWER_NET_GRACE_TITLE */
         "Light-sleep time before power-off",  /* SETTINGS_POWER_OFF_HINT */
         "Never",  /* SETTINGS_POWER_OFF_NEVER */
-        "Auto power-off (def 3 min)",  /* SETTINGS_POWER_OFF_TITLE */
+        "Auto power-off (def 30 min)",  /* SETTINGS_POWER_OFF_TITLE */
         "Idle time before light sleep",  /* SETTINGS_POWER_STANDBY_HINT */
         "Light sleep (def 3 min)",  /* SETTINGS_POWER_STANDBY_TITLE */
+        "Capacity: please wait…",  /* SETTINGS_STORAGE_CAP_BUSY */
         "Capacity: —",  /* SETTINGS_STORAGE_CAP_DASH */
-        "Capacity: exporting; disable to view",  /* SETTINGS_STORAGE_CAP_EXPORT */
+        "Capacity: in use; disable to view",  /* SETTINGS_STORAGE_CAP_EXPORT */
         "Capacity: read failed",  /* SETTINGS_STORAGE_CAP_FAIL */
         "%s free / %s total",  /* SETTINGS_STORAGE_CAP_FMT */
         "SD: inserted",  /* SETTINGS_STORAGE_INSERTED */
@@ -1244,6 +1360,7 @@ static const char* const kLiterals_en_us[] = {
         "Talk",  /* SETTINGS_TAB_CONVERSATION */
         "Haptic",  /* SETTINGS_TAB_HAPTIC */
         "Language",  /* SETTINGS_TAB_LANGUAGE */
+        "Log",  /* SETTINGS_TAB_LOG */
         "Network",  /* SETTINGS_TAB_NETWORK */
         "Power",  /* SETTINGS_TAB_POWER */
         "Storage",  /* SETTINGS_TAB_STORAGE */
@@ -1470,6 +1587,7 @@ static const char* const kLiterals_en_us[] = {
         "Ver ",  /* VERSION */
         "Connecting… will start automatically",  /* VOICE_STARTING_NET */
         "Volume ",  /* VOLUME */
+        "Adjust",  /* WALLPAPER_ADJUST */
         "Power-off",  /* WALLPAPER_CHIP_SHUTDOWN */
         "Standby",  /* WALLPAPER_CHIP_STANDBY */
         "Decode failed",  /* WALLPAPER_DECODE_FAIL */
@@ -1482,12 +1600,20 @@ static const char* const kLiterals_en_us[] = {
         "Invalid file",  /* WALLPAPER_FILE_INVALID */
         "File not found",  /* WALLPAPER_FILE_MISSING */
         "Loading…",  /* WALLPAPER_LOADING */
+        "Mirror",  /* WALLPAPER_MIRROR_H */
         "Invalid filename",  /* WALLPAPER_NAME_INVALID */
         "No SD card",  /* WALLPAPER_NO_SD */
+        "Overwrite",  /* WALLPAPER_OVERWRITE */
         "Invalid path",  /* WALLPAPER_PATH_INVALID */
         "Cannot preview",  /* WALLPAPER_PREVIEW_FAIL */
         "Out of memory, preview failed",  /* WALLPAPER_PREVIEW_OOM */
         "Failed to start preview",  /* WALLPAPER_PREVIEW_START_FAIL */
+        "Left",  /* WALLPAPER_ROTATE_LEFT */
+        "Right",  /* WALLPAPER_ROTATE_RIGHT */
+        "Save",  /* WALLPAPER_SAVE */
+        "Save as",  /* WALLPAPER_SAVE_AS */
+        "Save failed",  /* WALLPAPER_SAVE_FAIL */
+        "Saving…",  /* WALLPAPER_SAVING */
         "Selected %d",  /* WALLPAPER_SELECTED_FMT */
         "Set as power-off",  /* WALLPAPER_SET_SHUTDOWN */
         "Set as standby",  /* WALLPAPER_SET_STANDBY */
@@ -1504,13 +1630,15 @@ static const char* const kLiterals_zh_cn[] = {
         "电量已满",  /* BATTERY_FULL */
         "电量不足",  /* BATTERY_LOW */
         "电量低，请充电",  /* BATTERY_NEED_CHARGE */
+        "电池电压过低，即将关机，请充电…",  /* BATTERY_UV_SHUTDOWN */
+        "抗锯齿",  /* BOOK_ANTIALIAS */
         "参数错误",  /* BOOK_BAD_ARG */
         "（空白）",  /* BOOK_BLANK */
         "正文",  /* BOOK_BODY */
         "已取消",  /* BOOK_CANCELLED */
         "第%d章",  /* BOOK_CHAPTER_FMT */
         "（本章无文本）",  /* BOOK_CHAPTER_NO_TEXT */
-        "章节进度",  /* BOOK_CHAPTER_PROGRESS */
+        "底栏信息",  /* BOOK_CHAPTER_PROGRESS */
         "校验失败",  /* BOOK_CHECKSUM_FAIL */
         "创建连接失败",  /* BOOK_CONN_FAIL */
         "继续阅读",  /* BOOK_CONTINUE */
@@ -1532,6 +1660,10 @@ static const char* const kLiterals_zh_cn[] = {
         "无可用字体",  /* BOOK_FONT_EMPTY */
         "文件名无效",  /* BOOK_FONT_NAME_INVALID */
         "字体",  /* BOOK_FONT_TITLE */
+        "电量",  /* BOOK_FOOTER_BATTERY */
+        "进度",  /* BOOK_FOOTER_PROGRESS */
+        "时间",  /* BOOK_FOOTER_TIME */
+        "章节名",  /* BOOK_FOOTER_TITLE */
         "[图片]",  /* BOOK_IMAGE_PLACEHOLDER */
         "编排中",  /* BOOK_LAYOUT_BUSY */
         "完成",  /* BOOK_LAYOUT_DONE */
@@ -1556,6 +1688,10 @@ static const char* const kLiterals_zh_cn[] = {
         "打开失败\n请检查 EPUB 完整性",  /* BOOK_OPEN_FAILED_EPUB */
         "打开失败\n无法启动解析任务",  /* BOOK_OPEN_FAILED_TASK */
         "打开失败\nTXT 过大或内存不足",  /* BOOK_OPEN_FAILED_TXT */
+        "屏幕方向",  /* BOOK_ORIENT */
+        "左横",  /* BOOK_ORIENT_LAND_LEFT */
+        "右横",  /* BOOK_ORIENT_LAND_RIGHT */
+        "竖屏",  /* BOOK_ORIENT_PORTRAIT */
         "内存不足",  /* BOOK_OUT_OF_MEMORY */
         "无法加载页面",  /* BOOK_PAGE_LOAD_FAILED */
         "路径无效",  /* BOOK_PATH_INVALID */
@@ -1575,6 +1711,16 @@ static const char* const kLiterals_zh_cn[] = {
         "开始阅读",  /* BOOK_START */
         "存储目录不可用",  /* BOOK_STORAGE_UNAVAIL */
         "空请求体",  /* BOOK_SYNC_EMPTY_BODY */
+        "触摸分区",  /* BOOK_TAP_ZONES */
+        "选择动作",  /* BOOK_TAP_ZONES_PICK */
+        "恢复默认",  /* BOOK_TAP_ZONES_RESET */
+        "触摸分区",  /* BOOK_TAP_ZONES_TITLE */
+        "返回",  /* BOOK_TAP_ZONE_BACK */
+        "全刷一次",  /* BOOK_TAP_ZONE_FULL_REFRESH */
+        "菜单",  /* BOOK_TAP_ZONE_MENU */
+        "下一页",  /* BOOK_TAP_ZONE_NEXT */
+        "无",  /* BOOK_TAP_ZONE_NONE */
+        "上一页",  /* BOOK_TAP_ZONE_PREV */
         "目录",  /* BOOK_TOC */
         "暂无目录",  /* BOOK_TOC_EMPTY */
         "目录 %d/%d",  /* BOOK_TOC_PAGE_FMT */
@@ -1751,6 +1897,7 @@ static const char* const kLiterals_zh_cn[] = {
         "已连接 %s",  /* NETWORK_CONNECTED_FMT */
         "正在连接 %s …",  /* NETWORK_CONNECTING_FMT */
         "连接失败",  /* NETWORK_CONNECT_FAIL */
+        "请重新刷新 WiFi 列表",  /* NETWORK_CONNECT_FAIL_REFRESH */
         "无法启动连接任务",  /* NETWORK_CONNECT_TASK_FAIL */
         "连接超时",  /* NETWORK_CONNECT_TIMEOUT */
         "未能在 15 秒内完成连接，请重试",  /* NETWORK_CONNECT_TIMEOUT_HINT */
@@ -1793,6 +1940,7 @@ static const char* const kLiterals_zh_cn[] = {
         "手动升级",  /* OTA_MANUAL */
         "最新版本  %s",  /* OTA_NEW_VER_FMT */
         "下次提醒我",  /* OTA_REMIND_LATER */
+        "SD卡发现新固件\n当前版本 %s",  /* OTA_SD_CONFIRM_FMT */
         "升级成功，即将重启",  /* OTA_SUCCESS_REBOOT */
         "正在升级系统",  /* OTA_TITLE */
         "OTA 升级",  /* OTA_UPGRADE */
@@ -1900,18 +2048,42 @@ static const char* const kLiterals_zh_cn[] = {
         "语音播报",  /* SETTINGS_CONV_TITLE */
         "关闭 TTS",  /* SETTINGS_CONV_TTS_OFF */
         "开启 TTS",  /* SETTINGS_CONV_TTS_ON */
+        "当前：中",  /* SETTINGS_HAPTIC_CURRENT_MEDIUM */
         "当前：关闭",  /* SETTINGS_HAPTIC_CURRENT_OFF */
         "当前：开启",  /* SETTINGS_HAPTIC_CURRENT_ON */
+        "当前：强",  /* SETTINGS_HAPTIC_CURRENT_STRONG */
+        "当前：弱",  /* SETTINGS_HAPTIC_CURRENT_WEAK */
         "界面按钮与盖板虚拟键",  /* SETTINGS_HAPTIC_HINT */
+        "震动强度",  /* SETTINGS_HAPTIC_INTENSITY_TITLE */
+        "中",  /* SETTINGS_HAPTIC_MEDIUM */
         "关闭",  /* SETTINGS_HAPTIC_OFF */
         "开启",  /* SETTINGS_HAPTIC_ON */
+        "强",  /* SETTINGS_HAPTIC_STRONG */
         "按键震动",  /* SETTINGS_HAPTIC_TITLE */
+        "弱",  /* SETTINGS_HAPTIC_WEAK */
         "当前：English",  /* SETTINGS_LANG_CURRENT_EN */
         "当前：简体中文",  /* SETTINGS_LANG_CURRENT_ZH */
         "English",  /* SETTINGS_LANG_EN_US */
         "切换后立即生效",  /* SETTINGS_LANG_HINT */
         "界面语言",  /* SETTINGS_LANG_TITLE */
         "简体中文",  /* SETTINGS_LANG_ZH_CN */
+        "正在联网…",  /* SETTINGS_LOG_CONNECTING_NET */
+        "当前：关闭",  /* SETTINGS_LOG_CURRENT_OFF */
+        "当前：开启",  /* SETTINGS_LOG_CURRENT_ON */
+        "开启后：\n运行日志将写入\nmetalio/e-ink/logs/metalio_\nlogs.txt\n崩溃日志将写入\nmetalio/e-ink/logs/metalio_\ncoredump.elf",  /* SETTINGS_LOG_HINT */
+        "关闭则停止写入",  /* SETTINGS_LOG_HINT_OFF */
+        "请先配置网络",  /* SETTINGS_LOG_NEED_NET */
+        "关闭",  /* SETTINGS_LOG_OFF */
+        "开启",  /* SETTINGS_LOG_ON */
+        "运行日志",  /* SETTINGS_LOG_TITLE */
+        "上传日志",  /* SETTINGS_LOG_UPLOAD */
+        "正在上传…",  /* SETTINGS_LOG_UPLOADING */
+        "正在上传 %s",  /* SETTINGS_LOG_UPLOADING_NAME_FMT */
+        "忙，请稍候",  /* SETTINGS_LOG_UPLOAD_BUSY */
+        "已上传 %d / 共 %d",  /* SETTINGS_LOG_UPLOAD_COUNT_FMT */
+        "上传失败",  /* SETTINGS_LOG_UPLOAD_FAIL */
+        "日志文件不存在",  /* SETTINGS_LOG_UPLOAD_NO_FILE */
+        "上传成功",  /* SETTINGS_LOG_UPLOAD_OK */
         "无法打开 WiFi 配置页",  /* SETTINGS_NET_AP_TASK_FAIL */
         "当前板型不支持 WiFi 配置",  /* SETTINGS_NET_BOARD_NO_AP */
         "正在关闭射频…\nAT+CFUN=0",  /* SETTINGS_NET_CFUN0 */
@@ -1946,21 +2118,28 @@ static const char* const kLiterals_zh_cn[] = {
         "WiFi 网络",  /* SETTINGS_NET_WIFI_CFG_TITLE */
         "10 分",  /* SETTINGS_POWER_10_MIN */
         "120 秒",  /* SETTINGS_POWER_120_SEC */
+        "12 时",  /* SETTINGS_POWER_12_HOUR */
+        "15 时",  /* SETTINGS_POWER_15_HOUR */
+        "1 时",  /* SETTINGS_POWER_1_HOUR */
         "30 分",  /* SETTINGS_POWER_30_MIN */
         "30 秒",  /* SETTINGS_POWER_30_SEC */
+        "3 时",  /* SETTINGS_POWER_3_HOUR */
         "3 分",  /* SETTINGS_POWER_3_MIN */
         "60 秒",  /* SETTINGS_POWER_60_SEC */
+        "6 时",  /* SETTINGS_POWER_6_HOUR */
+        "9 时",  /* SETTINGS_POWER_9_HOUR */
         "无操作空闲时的 CPU 频率",  /* SETTINGS_POWER_IDLE_MHZ_HINT */
         "空闲降频（默认240Mhz）",  /* SETTINGS_POWER_IDLE_MHZ_TITLE */
         "无保网需求后，仍保持联网的时长",  /* SETTINGS_POWER_NET_GRACE_HINT */
         "保网时长（默认 30 秒）",  /* SETTINGS_POWER_NET_GRACE_TITLE */
         "浅睡累计多久自动关机",  /* SETTINGS_POWER_OFF_HINT */
         "永不",  /* SETTINGS_POWER_OFF_NEVER */
-        "自动关机（默认 3 分钟）",  /* SETTINGS_POWER_OFF_TITLE */
+        "自动关机（默认 30 分钟）",  /* SETTINGS_POWER_OFF_TITLE */
         "无操作多久进入浅睡待机",  /* SETTINGS_POWER_STANDBY_HINT */
         "浅睡待机（默认 3 分钟）",  /* SETTINGS_POWER_STANDBY_TITLE */
+        "容量：请稍候…",  /* SETTINGS_STORAGE_CAP_BUSY */
         "容量：—",  /* SETTINGS_STORAGE_CAP_DASH */
-        "容量：导出中，停用后可查看",  /* SETTINGS_STORAGE_CAP_EXPORT */
+        "容量：占用中，停用后再查看",  /* SETTINGS_STORAGE_CAP_EXPORT */
         "容量：读取失败",  /* SETTINGS_STORAGE_CAP_FAIL */
         "剩余 %s / 总容量 %s",  /* SETTINGS_STORAGE_CAP_FMT */
         "内存卡：已插入",  /* SETTINGS_STORAGE_INSERTED */
@@ -1987,6 +2166,7 @@ static const char* const kLiterals_zh_cn[] = {
         "对话",  /* SETTINGS_TAB_CONVERSATION */
         "震动",  /* SETTINGS_TAB_HAPTIC */
         "语言",  /* SETTINGS_TAB_LANGUAGE */
+        "日志",  /* SETTINGS_TAB_LOG */
         "网络",  /* SETTINGS_TAB_NETWORK */
         "功耗",  /* SETTINGS_TAB_POWER */
         "存储",  /* SETTINGS_TAB_STORAGE */
@@ -2213,6 +2393,7 @@ static const char* const kLiterals_zh_cn[] = {
         "版本 ",  /* VERSION */
         "正在联网启动，完成后自动开始…",  /* VOICE_STARTING_NET */
         "音量 ",  /* VOLUME */
+        "调整",  /* WALLPAPER_ADJUST */
         "关机",  /* WALLPAPER_CHIP_SHUTDOWN */
         "待机",  /* WALLPAPER_CHIP_STANDBY */
         "解码失败",  /* WALLPAPER_DECODE_FAIL */
@@ -2225,12 +2406,20 @@ static const char* const kLiterals_zh_cn[] = {
         "文件无效",  /* WALLPAPER_FILE_INVALID */
         "文件不存在",  /* WALLPAPER_FILE_MISSING */
         "加载中…",  /* WALLPAPER_LOADING */
+        "镜像",  /* WALLPAPER_MIRROR_H */
         "文件名无效",  /* WALLPAPER_NAME_INVALID */
         "未检测到 SD 卡",  /* WALLPAPER_NO_SD */
+        "覆盖",  /* WALLPAPER_OVERWRITE */
         "路径无效",  /* WALLPAPER_PATH_INVALID */
         "无法预览",  /* WALLPAPER_PREVIEW_FAIL */
         "内存不足，预览失败",  /* WALLPAPER_PREVIEW_OOM */
         "预览启动失败",  /* WALLPAPER_PREVIEW_START_FAIL */
+        "左转",  /* WALLPAPER_ROTATE_LEFT */
+        "右转",  /* WALLPAPER_ROTATE_RIGHT */
+        "保存",  /* WALLPAPER_SAVE */
+        "另存为",  /* WALLPAPER_SAVE_AS */
+        "保存失败",  /* WALLPAPER_SAVE_FAIL */
+        "正在保存…",  /* WALLPAPER_SAVING */
         "已选 %d",  /* WALLPAPER_SELECTED_FMT */
         "设为关机",  /* WALLPAPER_SET_SHUTDOWN */
         "设为待机",  /* WALLPAPER_SET_STANDBY */
@@ -2248,6 +2437,8 @@ void ApplyLiterals(const char* const* literals) {
     Strings::BATTERY_FULL = literals[static_cast<size_t>(LangStringId::BATTERY_FULL)];
     Strings::BATTERY_LOW = literals[static_cast<size_t>(LangStringId::BATTERY_LOW)];
     Strings::BATTERY_NEED_CHARGE = literals[static_cast<size_t>(LangStringId::BATTERY_NEED_CHARGE)];
+    Strings::BATTERY_UV_SHUTDOWN = literals[static_cast<size_t>(LangStringId::BATTERY_UV_SHUTDOWN)];
+    Strings::BOOK_ANTIALIAS = literals[static_cast<size_t>(LangStringId::BOOK_ANTIALIAS)];
     Strings::BOOK_BAD_ARG = literals[static_cast<size_t>(LangStringId::BOOK_BAD_ARG)];
     Strings::BOOK_BLANK = literals[static_cast<size_t>(LangStringId::BOOK_BLANK)];
     Strings::BOOK_BODY = literals[static_cast<size_t>(LangStringId::BOOK_BODY)];
@@ -2276,6 +2467,10 @@ void ApplyLiterals(const char* const* literals) {
     Strings::BOOK_FONT_EMPTY = literals[static_cast<size_t>(LangStringId::BOOK_FONT_EMPTY)];
     Strings::BOOK_FONT_NAME_INVALID = literals[static_cast<size_t>(LangStringId::BOOK_FONT_NAME_INVALID)];
     Strings::BOOK_FONT_TITLE = literals[static_cast<size_t>(LangStringId::BOOK_FONT_TITLE)];
+    Strings::BOOK_FOOTER_BATTERY = literals[static_cast<size_t>(LangStringId::BOOK_FOOTER_BATTERY)];
+    Strings::BOOK_FOOTER_PROGRESS = literals[static_cast<size_t>(LangStringId::BOOK_FOOTER_PROGRESS)];
+    Strings::BOOK_FOOTER_TIME = literals[static_cast<size_t>(LangStringId::BOOK_FOOTER_TIME)];
+    Strings::BOOK_FOOTER_TITLE = literals[static_cast<size_t>(LangStringId::BOOK_FOOTER_TITLE)];
     Strings::BOOK_IMAGE_PLACEHOLDER = literals[static_cast<size_t>(LangStringId::BOOK_IMAGE_PLACEHOLDER)];
     Strings::BOOK_LAYOUT_BUSY = literals[static_cast<size_t>(LangStringId::BOOK_LAYOUT_BUSY)];
     Strings::BOOK_LAYOUT_DONE = literals[static_cast<size_t>(LangStringId::BOOK_LAYOUT_DONE)];
@@ -2300,6 +2495,10 @@ void ApplyLiterals(const char* const* literals) {
     Strings::BOOK_OPEN_FAILED_EPUB = literals[static_cast<size_t>(LangStringId::BOOK_OPEN_FAILED_EPUB)];
     Strings::BOOK_OPEN_FAILED_TASK = literals[static_cast<size_t>(LangStringId::BOOK_OPEN_FAILED_TASK)];
     Strings::BOOK_OPEN_FAILED_TXT = literals[static_cast<size_t>(LangStringId::BOOK_OPEN_FAILED_TXT)];
+    Strings::BOOK_ORIENT = literals[static_cast<size_t>(LangStringId::BOOK_ORIENT)];
+    Strings::BOOK_ORIENT_LAND_LEFT = literals[static_cast<size_t>(LangStringId::BOOK_ORIENT_LAND_LEFT)];
+    Strings::BOOK_ORIENT_LAND_RIGHT = literals[static_cast<size_t>(LangStringId::BOOK_ORIENT_LAND_RIGHT)];
+    Strings::BOOK_ORIENT_PORTRAIT = literals[static_cast<size_t>(LangStringId::BOOK_ORIENT_PORTRAIT)];
     Strings::BOOK_OUT_OF_MEMORY = literals[static_cast<size_t>(LangStringId::BOOK_OUT_OF_MEMORY)];
     Strings::BOOK_PAGE_LOAD_FAILED = literals[static_cast<size_t>(LangStringId::BOOK_PAGE_LOAD_FAILED)];
     Strings::BOOK_PATH_INVALID = literals[static_cast<size_t>(LangStringId::BOOK_PATH_INVALID)];
@@ -2319,6 +2518,16 @@ void ApplyLiterals(const char* const* literals) {
     Strings::BOOK_START = literals[static_cast<size_t>(LangStringId::BOOK_START)];
     Strings::BOOK_STORAGE_UNAVAIL = literals[static_cast<size_t>(LangStringId::BOOK_STORAGE_UNAVAIL)];
     Strings::BOOK_SYNC_EMPTY_BODY = literals[static_cast<size_t>(LangStringId::BOOK_SYNC_EMPTY_BODY)];
+    Strings::BOOK_TAP_ZONES = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONES)];
+    Strings::BOOK_TAP_ZONES_PICK = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONES_PICK)];
+    Strings::BOOK_TAP_ZONES_RESET = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONES_RESET)];
+    Strings::BOOK_TAP_ZONES_TITLE = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONES_TITLE)];
+    Strings::BOOK_TAP_ZONE_BACK = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_BACK)];
+    Strings::BOOK_TAP_ZONE_FULL_REFRESH = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_FULL_REFRESH)];
+    Strings::BOOK_TAP_ZONE_MENU = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_MENU)];
+    Strings::BOOK_TAP_ZONE_NEXT = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_NEXT)];
+    Strings::BOOK_TAP_ZONE_NONE = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_NONE)];
+    Strings::BOOK_TAP_ZONE_PREV = literals[static_cast<size_t>(LangStringId::BOOK_TAP_ZONE_PREV)];
     Strings::BOOK_TOC = literals[static_cast<size_t>(LangStringId::BOOK_TOC)];
     Strings::BOOK_TOC_EMPTY = literals[static_cast<size_t>(LangStringId::BOOK_TOC_EMPTY)];
     Strings::BOOK_TOC_PAGE_FMT = literals[static_cast<size_t>(LangStringId::BOOK_TOC_PAGE_FMT)];
@@ -2495,6 +2704,7 @@ void ApplyLiterals(const char* const* literals) {
     Strings::NETWORK_CONNECTED_FMT = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECTED_FMT)];
     Strings::NETWORK_CONNECTING_FMT = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECTING_FMT)];
     Strings::NETWORK_CONNECT_FAIL = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECT_FAIL)];
+    Strings::NETWORK_CONNECT_FAIL_REFRESH = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECT_FAIL_REFRESH)];
     Strings::NETWORK_CONNECT_TASK_FAIL = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECT_TASK_FAIL)];
     Strings::NETWORK_CONNECT_TIMEOUT = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECT_TIMEOUT)];
     Strings::NETWORK_CONNECT_TIMEOUT_HINT = literals[static_cast<size_t>(LangStringId::NETWORK_CONNECT_TIMEOUT_HINT)];
@@ -2537,6 +2747,7 @@ void ApplyLiterals(const char* const* literals) {
     Strings::OTA_MANUAL = literals[static_cast<size_t>(LangStringId::OTA_MANUAL)];
     Strings::OTA_NEW_VER_FMT = literals[static_cast<size_t>(LangStringId::OTA_NEW_VER_FMT)];
     Strings::OTA_REMIND_LATER = literals[static_cast<size_t>(LangStringId::OTA_REMIND_LATER)];
+    Strings::OTA_SD_CONFIRM_FMT = literals[static_cast<size_t>(LangStringId::OTA_SD_CONFIRM_FMT)];
     Strings::OTA_SUCCESS_REBOOT = literals[static_cast<size_t>(LangStringId::OTA_SUCCESS_REBOOT)];
     Strings::OTA_TITLE = literals[static_cast<size_t>(LangStringId::OTA_TITLE)];
     Strings::OTA_UPGRADE = literals[static_cast<size_t>(LangStringId::OTA_UPGRADE)];
@@ -2644,18 +2855,42 @@ void ApplyLiterals(const char* const* literals) {
     Strings::SETTINGS_CONV_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_CONV_TITLE)];
     Strings::SETTINGS_CONV_TTS_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_CONV_TTS_OFF)];
     Strings::SETTINGS_CONV_TTS_ON = literals[static_cast<size_t>(LangStringId::SETTINGS_CONV_TTS_ON)];
+    Strings::SETTINGS_HAPTIC_CURRENT_MEDIUM = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_CURRENT_MEDIUM)];
     Strings::SETTINGS_HAPTIC_CURRENT_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_CURRENT_OFF)];
     Strings::SETTINGS_HAPTIC_CURRENT_ON = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_CURRENT_ON)];
+    Strings::SETTINGS_HAPTIC_CURRENT_STRONG = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_CURRENT_STRONG)];
+    Strings::SETTINGS_HAPTIC_CURRENT_WEAK = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_CURRENT_WEAK)];
     Strings::SETTINGS_HAPTIC_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_HINT)];
+    Strings::SETTINGS_HAPTIC_INTENSITY_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_INTENSITY_TITLE)];
+    Strings::SETTINGS_HAPTIC_MEDIUM = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_MEDIUM)];
     Strings::SETTINGS_HAPTIC_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_OFF)];
     Strings::SETTINGS_HAPTIC_ON = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_ON)];
+    Strings::SETTINGS_HAPTIC_STRONG = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_STRONG)];
     Strings::SETTINGS_HAPTIC_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_TITLE)];
+    Strings::SETTINGS_HAPTIC_WEAK = literals[static_cast<size_t>(LangStringId::SETTINGS_HAPTIC_WEAK)];
     Strings::SETTINGS_LANG_CURRENT_EN = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_CURRENT_EN)];
     Strings::SETTINGS_LANG_CURRENT_ZH = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_CURRENT_ZH)];
     Strings::SETTINGS_LANG_EN_US = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_EN_US)];
     Strings::SETTINGS_LANG_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_HINT)];
     Strings::SETTINGS_LANG_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_TITLE)];
     Strings::SETTINGS_LANG_ZH_CN = literals[static_cast<size_t>(LangStringId::SETTINGS_LANG_ZH_CN)];
+    Strings::SETTINGS_LOG_CONNECTING_NET = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_CONNECTING_NET)];
+    Strings::SETTINGS_LOG_CURRENT_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_CURRENT_OFF)];
+    Strings::SETTINGS_LOG_CURRENT_ON = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_CURRENT_ON)];
+    Strings::SETTINGS_LOG_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_HINT)];
+    Strings::SETTINGS_LOG_HINT_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_HINT_OFF)];
+    Strings::SETTINGS_LOG_NEED_NET = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_NEED_NET)];
+    Strings::SETTINGS_LOG_OFF = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_OFF)];
+    Strings::SETTINGS_LOG_ON = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_ON)];
+    Strings::SETTINGS_LOG_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_TITLE)];
+    Strings::SETTINGS_LOG_UPLOAD = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD)];
+    Strings::SETTINGS_LOG_UPLOADING = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOADING)];
+    Strings::SETTINGS_LOG_UPLOADING_NAME_FMT = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOADING_NAME_FMT)];
+    Strings::SETTINGS_LOG_UPLOAD_BUSY = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD_BUSY)];
+    Strings::SETTINGS_LOG_UPLOAD_COUNT_FMT = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD_COUNT_FMT)];
+    Strings::SETTINGS_LOG_UPLOAD_FAIL = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD_FAIL)];
+    Strings::SETTINGS_LOG_UPLOAD_NO_FILE = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD_NO_FILE)];
+    Strings::SETTINGS_LOG_UPLOAD_OK = literals[static_cast<size_t>(LangStringId::SETTINGS_LOG_UPLOAD_OK)];
     Strings::SETTINGS_NET_AP_TASK_FAIL = literals[static_cast<size_t>(LangStringId::SETTINGS_NET_AP_TASK_FAIL)];
     Strings::SETTINGS_NET_BOARD_NO_AP = literals[static_cast<size_t>(LangStringId::SETTINGS_NET_BOARD_NO_AP)];
     Strings::SETTINGS_NET_CFUN0 = literals[static_cast<size_t>(LangStringId::SETTINGS_NET_CFUN0)];
@@ -2690,10 +2925,16 @@ void ApplyLiterals(const char* const* literals) {
     Strings::SETTINGS_NET_WIFI_CFG_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_NET_WIFI_CFG_TITLE)];
     Strings::SETTINGS_POWER_10_MIN = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_10_MIN)];
     Strings::SETTINGS_POWER_120_SEC = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_120_SEC)];
+    Strings::SETTINGS_POWER_12_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_12_HOUR)];
+    Strings::SETTINGS_POWER_15_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_15_HOUR)];
+    Strings::SETTINGS_POWER_1_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_1_HOUR)];
     Strings::SETTINGS_POWER_30_MIN = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_30_MIN)];
     Strings::SETTINGS_POWER_30_SEC = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_30_SEC)];
+    Strings::SETTINGS_POWER_3_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_3_HOUR)];
     Strings::SETTINGS_POWER_3_MIN = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_3_MIN)];
     Strings::SETTINGS_POWER_60_SEC = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_60_SEC)];
+    Strings::SETTINGS_POWER_6_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_6_HOUR)];
+    Strings::SETTINGS_POWER_9_HOUR = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_9_HOUR)];
     Strings::SETTINGS_POWER_IDLE_MHZ_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_IDLE_MHZ_HINT)];
     Strings::SETTINGS_POWER_IDLE_MHZ_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_IDLE_MHZ_TITLE)];
     Strings::SETTINGS_POWER_NET_GRACE_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_NET_GRACE_HINT)];
@@ -2703,6 +2944,7 @@ void ApplyLiterals(const char* const* literals) {
     Strings::SETTINGS_POWER_OFF_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_OFF_TITLE)];
     Strings::SETTINGS_POWER_STANDBY_HINT = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_STANDBY_HINT)];
     Strings::SETTINGS_POWER_STANDBY_TITLE = literals[static_cast<size_t>(LangStringId::SETTINGS_POWER_STANDBY_TITLE)];
+    Strings::SETTINGS_STORAGE_CAP_BUSY = literals[static_cast<size_t>(LangStringId::SETTINGS_STORAGE_CAP_BUSY)];
     Strings::SETTINGS_STORAGE_CAP_DASH = literals[static_cast<size_t>(LangStringId::SETTINGS_STORAGE_CAP_DASH)];
     Strings::SETTINGS_STORAGE_CAP_EXPORT = literals[static_cast<size_t>(LangStringId::SETTINGS_STORAGE_CAP_EXPORT)];
     Strings::SETTINGS_STORAGE_CAP_FAIL = literals[static_cast<size_t>(LangStringId::SETTINGS_STORAGE_CAP_FAIL)];
@@ -2731,6 +2973,7 @@ void ApplyLiterals(const char* const* literals) {
     Strings::SETTINGS_TAB_CONVERSATION = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_CONVERSATION)];
     Strings::SETTINGS_TAB_HAPTIC = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_HAPTIC)];
     Strings::SETTINGS_TAB_LANGUAGE = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_LANGUAGE)];
+    Strings::SETTINGS_TAB_LOG = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_LOG)];
     Strings::SETTINGS_TAB_NETWORK = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_NETWORK)];
     Strings::SETTINGS_TAB_POWER = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_POWER)];
     Strings::SETTINGS_TAB_STORAGE = literals[static_cast<size_t>(LangStringId::SETTINGS_TAB_STORAGE)];
@@ -2957,6 +3200,7 @@ void ApplyLiterals(const char* const* literals) {
     Strings::VERSION = literals[static_cast<size_t>(LangStringId::VERSION)];
     Strings::VOICE_STARTING_NET = literals[static_cast<size_t>(LangStringId::VOICE_STARTING_NET)];
     Strings::VOLUME = literals[static_cast<size_t>(LangStringId::VOLUME)];
+    Strings::WALLPAPER_ADJUST = literals[static_cast<size_t>(LangStringId::WALLPAPER_ADJUST)];
     Strings::WALLPAPER_CHIP_SHUTDOWN = literals[static_cast<size_t>(LangStringId::WALLPAPER_CHIP_SHUTDOWN)];
     Strings::WALLPAPER_CHIP_STANDBY = literals[static_cast<size_t>(LangStringId::WALLPAPER_CHIP_STANDBY)];
     Strings::WALLPAPER_DECODE_FAIL = literals[static_cast<size_t>(LangStringId::WALLPAPER_DECODE_FAIL)];
@@ -2969,12 +3213,20 @@ void ApplyLiterals(const char* const* literals) {
     Strings::WALLPAPER_FILE_INVALID = literals[static_cast<size_t>(LangStringId::WALLPAPER_FILE_INVALID)];
     Strings::WALLPAPER_FILE_MISSING = literals[static_cast<size_t>(LangStringId::WALLPAPER_FILE_MISSING)];
     Strings::WALLPAPER_LOADING = literals[static_cast<size_t>(LangStringId::WALLPAPER_LOADING)];
+    Strings::WALLPAPER_MIRROR_H = literals[static_cast<size_t>(LangStringId::WALLPAPER_MIRROR_H)];
     Strings::WALLPAPER_NAME_INVALID = literals[static_cast<size_t>(LangStringId::WALLPAPER_NAME_INVALID)];
     Strings::WALLPAPER_NO_SD = literals[static_cast<size_t>(LangStringId::WALLPAPER_NO_SD)];
+    Strings::WALLPAPER_OVERWRITE = literals[static_cast<size_t>(LangStringId::WALLPAPER_OVERWRITE)];
     Strings::WALLPAPER_PATH_INVALID = literals[static_cast<size_t>(LangStringId::WALLPAPER_PATH_INVALID)];
     Strings::WALLPAPER_PREVIEW_FAIL = literals[static_cast<size_t>(LangStringId::WALLPAPER_PREVIEW_FAIL)];
     Strings::WALLPAPER_PREVIEW_OOM = literals[static_cast<size_t>(LangStringId::WALLPAPER_PREVIEW_OOM)];
     Strings::WALLPAPER_PREVIEW_START_FAIL = literals[static_cast<size_t>(LangStringId::WALLPAPER_PREVIEW_START_FAIL)];
+    Strings::WALLPAPER_ROTATE_LEFT = literals[static_cast<size_t>(LangStringId::WALLPAPER_ROTATE_LEFT)];
+    Strings::WALLPAPER_ROTATE_RIGHT = literals[static_cast<size_t>(LangStringId::WALLPAPER_ROTATE_RIGHT)];
+    Strings::WALLPAPER_SAVE = literals[static_cast<size_t>(LangStringId::WALLPAPER_SAVE)];
+    Strings::WALLPAPER_SAVE_AS = literals[static_cast<size_t>(LangStringId::WALLPAPER_SAVE_AS)];
+    Strings::WALLPAPER_SAVE_FAIL = literals[static_cast<size_t>(LangStringId::WALLPAPER_SAVE_FAIL)];
+    Strings::WALLPAPER_SAVING = literals[static_cast<size_t>(LangStringId::WALLPAPER_SAVING)];
     Strings::WALLPAPER_SELECTED_FMT = literals[static_cast<size_t>(LangStringId::WALLPAPER_SELECTED_FMT)];
     Strings::WALLPAPER_SET_SHUTDOWN = literals[static_cast<size_t>(LangStringId::WALLPAPER_SET_SHUTDOWN)];
     Strings::WALLPAPER_SET_STANDBY = literals[static_cast<size_t>(LangStringId::WALLPAPER_SET_STANDBY)];
@@ -3009,6 +3261,8 @@ const char* Strings::BATTERY_CHARGING = "";
 const char* Strings::BATTERY_FULL = "";
 const char* Strings::BATTERY_LOW = "";
 const char* Strings::BATTERY_NEED_CHARGE = "";
+const char* Strings::BATTERY_UV_SHUTDOWN = "";
+const char* Strings::BOOK_ANTIALIAS = "";
 const char* Strings::BOOK_BAD_ARG = "";
 const char* Strings::BOOK_BLANK = "";
 const char* Strings::BOOK_BODY = "";
@@ -3037,6 +3291,10 @@ const char* Strings::BOOK_FINISHED = "";
 const char* Strings::BOOK_FONT_EMPTY = "";
 const char* Strings::BOOK_FONT_NAME_INVALID = "";
 const char* Strings::BOOK_FONT_TITLE = "";
+const char* Strings::BOOK_FOOTER_BATTERY = "";
+const char* Strings::BOOK_FOOTER_PROGRESS = "";
+const char* Strings::BOOK_FOOTER_TIME = "";
+const char* Strings::BOOK_FOOTER_TITLE = "";
 const char* Strings::BOOK_IMAGE_PLACEHOLDER = "";
 const char* Strings::BOOK_LAYOUT_BUSY = "";
 const char* Strings::BOOK_LAYOUT_DONE = "";
@@ -3061,6 +3319,10 @@ const char* Strings::BOOK_OPEN_FAILED_CHAPTER = "";
 const char* Strings::BOOK_OPEN_FAILED_EPUB = "";
 const char* Strings::BOOK_OPEN_FAILED_TASK = "";
 const char* Strings::BOOK_OPEN_FAILED_TXT = "";
+const char* Strings::BOOK_ORIENT = "";
+const char* Strings::BOOK_ORIENT_LAND_LEFT = "";
+const char* Strings::BOOK_ORIENT_LAND_RIGHT = "";
+const char* Strings::BOOK_ORIENT_PORTRAIT = "";
 const char* Strings::BOOK_OUT_OF_MEMORY = "";
 const char* Strings::BOOK_PAGE_LOAD_FAILED = "";
 const char* Strings::BOOK_PATH_INVALID = "";
@@ -3080,6 +3342,16 @@ const char* Strings::BOOK_SPACING_VERY_RELAXED = "";
 const char* Strings::BOOK_START = "";
 const char* Strings::BOOK_STORAGE_UNAVAIL = "";
 const char* Strings::BOOK_SYNC_EMPTY_BODY = "";
+const char* Strings::BOOK_TAP_ZONES = "";
+const char* Strings::BOOK_TAP_ZONES_PICK = "";
+const char* Strings::BOOK_TAP_ZONES_RESET = "";
+const char* Strings::BOOK_TAP_ZONES_TITLE = "";
+const char* Strings::BOOK_TAP_ZONE_BACK = "";
+const char* Strings::BOOK_TAP_ZONE_FULL_REFRESH = "";
+const char* Strings::BOOK_TAP_ZONE_MENU = "";
+const char* Strings::BOOK_TAP_ZONE_NEXT = "";
+const char* Strings::BOOK_TAP_ZONE_NONE = "";
+const char* Strings::BOOK_TAP_ZONE_PREV = "";
 const char* Strings::BOOK_TOC = "";
 const char* Strings::BOOK_TOC_EMPTY = "";
 const char* Strings::BOOK_TOC_PAGE_FMT = "";
@@ -3256,6 +3528,7 @@ const char* Strings::NETWORK_CONNECT = "";
 const char* Strings::NETWORK_CONNECTED_FMT = "";
 const char* Strings::NETWORK_CONNECTING_FMT = "";
 const char* Strings::NETWORK_CONNECT_FAIL = "";
+const char* Strings::NETWORK_CONNECT_FAIL_REFRESH = "";
 const char* Strings::NETWORK_CONNECT_TASK_FAIL = "";
 const char* Strings::NETWORK_CONNECT_TIMEOUT = "";
 const char* Strings::NETWORK_CONNECT_TIMEOUT_HINT = "";
@@ -3298,6 +3571,7 @@ const char* Strings::OTA_IGNORE_VERSION = "";
 const char* Strings::OTA_MANUAL = "";
 const char* Strings::OTA_NEW_VER_FMT = "";
 const char* Strings::OTA_REMIND_LATER = "";
+const char* Strings::OTA_SD_CONFIRM_FMT = "";
 const char* Strings::OTA_SUCCESS_REBOOT = "";
 const char* Strings::OTA_TITLE = "";
 const char* Strings::OTA_UPGRADE = "";
@@ -3405,18 +3679,42 @@ const char* Strings::SETTINGS_CONV_REQUEST_FAIL = "";
 const char* Strings::SETTINGS_CONV_TITLE = "";
 const char* Strings::SETTINGS_CONV_TTS_OFF = "";
 const char* Strings::SETTINGS_CONV_TTS_ON = "";
+const char* Strings::SETTINGS_HAPTIC_CURRENT_MEDIUM = "";
 const char* Strings::SETTINGS_HAPTIC_CURRENT_OFF = "";
 const char* Strings::SETTINGS_HAPTIC_CURRENT_ON = "";
+const char* Strings::SETTINGS_HAPTIC_CURRENT_STRONG = "";
+const char* Strings::SETTINGS_HAPTIC_CURRENT_WEAK = "";
 const char* Strings::SETTINGS_HAPTIC_HINT = "";
+const char* Strings::SETTINGS_HAPTIC_INTENSITY_TITLE = "";
+const char* Strings::SETTINGS_HAPTIC_MEDIUM = "";
 const char* Strings::SETTINGS_HAPTIC_OFF = "";
 const char* Strings::SETTINGS_HAPTIC_ON = "";
+const char* Strings::SETTINGS_HAPTIC_STRONG = "";
 const char* Strings::SETTINGS_HAPTIC_TITLE = "";
+const char* Strings::SETTINGS_HAPTIC_WEAK = "";
 const char* Strings::SETTINGS_LANG_CURRENT_EN = "";
 const char* Strings::SETTINGS_LANG_CURRENT_ZH = "";
 const char* Strings::SETTINGS_LANG_EN_US = "";
 const char* Strings::SETTINGS_LANG_HINT = "";
 const char* Strings::SETTINGS_LANG_TITLE = "";
 const char* Strings::SETTINGS_LANG_ZH_CN = "";
+const char* Strings::SETTINGS_LOG_CONNECTING_NET = "";
+const char* Strings::SETTINGS_LOG_CURRENT_OFF = "";
+const char* Strings::SETTINGS_LOG_CURRENT_ON = "";
+const char* Strings::SETTINGS_LOG_HINT = "";
+const char* Strings::SETTINGS_LOG_HINT_OFF = "";
+const char* Strings::SETTINGS_LOG_NEED_NET = "";
+const char* Strings::SETTINGS_LOG_OFF = "";
+const char* Strings::SETTINGS_LOG_ON = "";
+const char* Strings::SETTINGS_LOG_TITLE = "";
+const char* Strings::SETTINGS_LOG_UPLOAD = "";
+const char* Strings::SETTINGS_LOG_UPLOADING = "";
+const char* Strings::SETTINGS_LOG_UPLOADING_NAME_FMT = "";
+const char* Strings::SETTINGS_LOG_UPLOAD_BUSY = "";
+const char* Strings::SETTINGS_LOG_UPLOAD_COUNT_FMT = "";
+const char* Strings::SETTINGS_LOG_UPLOAD_FAIL = "";
+const char* Strings::SETTINGS_LOG_UPLOAD_NO_FILE = "";
+const char* Strings::SETTINGS_LOG_UPLOAD_OK = "";
 const char* Strings::SETTINGS_NET_AP_TASK_FAIL = "";
 const char* Strings::SETTINGS_NET_BOARD_NO_AP = "";
 const char* Strings::SETTINGS_NET_CFUN0 = "";
@@ -3451,10 +3749,16 @@ const char* Strings::SETTINGS_NET_WIFI_CFG_HINT = "";
 const char* Strings::SETTINGS_NET_WIFI_CFG_TITLE = "";
 const char* Strings::SETTINGS_POWER_10_MIN = "";
 const char* Strings::SETTINGS_POWER_120_SEC = "";
+const char* Strings::SETTINGS_POWER_12_HOUR = "";
+const char* Strings::SETTINGS_POWER_15_HOUR = "";
+const char* Strings::SETTINGS_POWER_1_HOUR = "";
 const char* Strings::SETTINGS_POWER_30_MIN = "";
 const char* Strings::SETTINGS_POWER_30_SEC = "";
+const char* Strings::SETTINGS_POWER_3_HOUR = "";
 const char* Strings::SETTINGS_POWER_3_MIN = "";
 const char* Strings::SETTINGS_POWER_60_SEC = "";
+const char* Strings::SETTINGS_POWER_6_HOUR = "";
+const char* Strings::SETTINGS_POWER_9_HOUR = "";
 const char* Strings::SETTINGS_POWER_IDLE_MHZ_HINT = "";
 const char* Strings::SETTINGS_POWER_IDLE_MHZ_TITLE = "";
 const char* Strings::SETTINGS_POWER_NET_GRACE_HINT = "";
@@ -3464,6 +3768,7 @@ const char* Strings::SETTINGS_POWER_OFF_NEVER = "";
 const char* Strings::SETTINGS_POWER_OFF_TITLE = "";
 const char* Strings::SETTINGS_POWER_STANDBY_HINT = "";
 const char* Strings::SETTINGS_POWER_STANDBY_TITLE = "";
+const char* Strings::SETTINGS_STORAGE_CAP_BUSY = "";
 const char* Strings::SETTINGS_STORAGE_CAP_DASH = "";
 const char* Strings::SETTINGS_STORAGE_CAP_EXPORT = "";
 const char* Strings::SETTINGS_STORAGE_CAP_FAIL = "";
@@ -3492,6 +3797,7 @@ const char* Strings::SETTINGS_TAB_BLUETOOTH = "";
 const char* Strings::SETTINGS_TAB_CONVERSATION = "";
 const char* Strings::SETTINGS_TAB_HAPTIC = "";
 const char* Strings::SETTINGS_TAB_LANGUAGE = "";
+const char* Strings::SETTINGS_TAB_LOG = "";
 const char* Strings::SETTINGS_TAB_NETWORK = "";
 const char* Strings::SETTINGS_TAB_POWER = "";
 const char* Strings::SETTINGS_TAB_STORAGE = "";
@@ -3718,6 +4024,7 @@ const char* Strings::UPGRADING = "";
 const char* Strings::VERSION = "";
 const char* Strings::VOICE_STARTING_NET = "";
 const char* Strings::VOLUME = "";
+const char* Strings::WALLPAPER_ADJUST = "";
 const char* Strings::WALLPAPER_CHIP_SHUTDOWN = "";
 const char* Strings::WALLPAPER_CHIP_STANDBY = "";
 const char* Strings::WALLPAPER_DECODE_FAIL = "";
@@ -3730,12 +4037,20 @@ const char* Strings::WALLPAPER_ENABLE_FAIL = "";
 const char* Strings::WALLPAPER_FILE_INVALID = "";
 const char* Strings::WALLPAPER_FILE_MISSING = "";
 const char* Strings::WALLPAPER_LOADING = "";
+const char* Strings::WALLPAPER_MIRROR_H = "";
 const char* Strings::WALLPAPER_NAME_INVALID = "";
 const char* Strings::WALLPAPER_NO_SD = "";
+const char* Strings::WALLPAPER_OVERWRITE = "";
 const char* Strings::WALLPAPER_PATH_INVALID = "";
 const char* Strings::WALLPAPER_PREVIEW_FAIL = "";
 const char* Strings::WALLPAPER_PREVIEW_OOM = "";
 const char* Strings::WALLPAPER_PREVIEW_START_FAIL = "";
+const char* Strings::WALLPAPER_ROTATE_LEFT = "";
+const char* Strings::WALLPAPER_ROTATE_RIGHT = "";
+const char* Strings::WALLPAPER_SAVE = "";
+const char* Strings::WALLPAPER_SAVE_AS = "";
+const char* Strings::WALLPAPER_SAVE_FAIL = "";
+const char* Strings::WALLPAPER_SAVING = "";
 const char* Strings::WALLPAPER_SELECTED_FMT = "";
 const char* Strings::WALLPAPER_SET_SHUTDOWN = "";
 const char* Strings::WALLPAPER_SET_STANDBY = "";

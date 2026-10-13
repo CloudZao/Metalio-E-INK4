@@ -12,6 +12,8 @@
 #include "settings_conversation_tab.h"
 #include "settings_haptic_tab.h"
 #include "settings_language_tab.h"
+#include "settings_log_tab.h"
+#include "settings_log_upload.h"
 #include "settings_network_tab.h"
 #include "settings_power_tab.h"
 #include "settings_storage_tab.h"
@@ -24,10 +26,9 @@
 #include <esp_log.h>
 #include "fontpack_lvgl.h"
 
-namespace {
 
-constexpr const char* TAG = "SettingsScreen";
-constexpr const char* kScreenId = "settings";
+static constexpr const char* TAG = "SettingsScreen";
+static constexpr const char* kScreenId = "settings";
 
 enum class SettingsTab : int {
     kNetwork = 0,
@@ -39,27 +40,29 @@ enum class SettingsTab : int {
     kStorage = 6,
     kBluetooth = 7,
     kTest = 8,
-    kAbout = 9,  // 关于始终放最后
+    kLog = 9,
+    kAbout = 10,  // 关于始终放最后
 };
 
-struct TabEntry {
+struct SettingsTabEntry {
     SettingsTab id;
     const char* (*name)();
 };
 
-const char* TabNameNetwork() { return Lang::Strings::SETTINGS_TAB_NETWORK; }
-const char* TabNameTheme() { return Lang::Strings::SETTINGS_TAB_THEME; }
-const char* TabNameLanguage() { return Lang::Strings::SETTINGS_TAB_LANGUAGE; }
-const char* TabNameHaptic() { return Lang::Strings::SETTINGS_TAB_HAPTIC; }
-const char* TabNamePower() { return Lang::Strings::SETTINGS_TAB_POWER; }
-const char* TabNameConversation() { return Lang::Strings::SETTINGS_TAB_CONVERSATION; }
-const char* TabNameStorage() { return Lang::Strings::SETTINGS_TAB_STORAGE; }
-const char* TabNameBluetooth() { return Lang::Strings::SETTINGS_TAB_BLUETOOTH; }
-const char* TabNameTest() { return Lang::Strings::SETTINGS_TAB_TEST; }
-const char* TabNameAbout() { return Lang::Strings::SETTINGS_TAB_ABOUT; }
+static const char* TabNameNetwork() { return Lang::Strings::SETTINGS_TAB_NETWORK; }
+static const char* TabNameTheme() { return Lang::Strings::SETTINGS_TAB_THEME; }
+static const char* TabNameLanguage() { return Lang::Strings::SETTINGS_TAB_LANGUAGE; }
+static const char* TabNameHaptic() { return Lang::Strings::SETTINGS_TAB_HAPTIC; }
+static const char* TabNamePower() { return Lang::Strings::SETTINGS_TAB_POWER; }
+static const char* TabNameConversation() { return Lang::Strings::SETTINGS_TAB_CONVERSATION; }
+static const char* TabNameStorage() { return Lang::Strings::SETTINGS_TAB_STORAGE; }
+static const char* TabNameBluetooth() { return Lang::Strings::SETTINGS_TAB_BLUETOOTH; }
+static const char* TabNameTest() { return Lang::Strings::SETTINGS_TAB_TEST; }
+static const char* TabNameLog() { return Lang::Strings::SETTINGS_TAB_LOG; }
+static const char* TabNameAbout() { return Lang::Strings::SETTINGS_TAB_ABOUT; }
 
 // 关于 Tab 必须保持为数组最后一项
-constexpr TabEntry kTabs[] = {
+static constexpr SettingsTabEntry kTabs[] = {
     {SettingsTab::kNetwork, TabNameNetwork},
     {SettingsTab::kTheme, TabNameTheme},
     {SettingsTab::kLanguage, TabNameLanguage},
@@ -69,9 +72,10 @@ constexpr TabEntry kTabs[] = {
     {SettingsTab::kStorage, TabNameStorage},
     {SettingsTab::kBluetooth, TabNameBluetooth},
     {SettingsTab::kTest, TabNameTest},
+    {SettingsTab::kLog, TabNameLog},
     {SettingsTab::kAbout, TabNameAbout},
 };
-constexpr int kTabCount = sizeof(kTabs) / sizeof(kTabs[0]);
+static constexpr int kTabCount = sizeof(kTabs) / sizeof(kTabs[0]);
 static_assert(kTabs[kTabCount - 1].id == SettingsTab::kAbout, "about tab must be last");
 
 struct SettingsShellUi {
@@ -81,11 +85,11 @@ struct SettingsShellUi {
     bool content_built = false;
 };
 
-SettingsShellUi s_ui;
-SettingsTab s_pending_tab = SettingsTab::kNetwork;
-lv_obj_t* s_settings_scr = nullptr; // 当前设置壳；async 删旧屏时勿清新屏指针
+static SettingsShellUi s_ui;
+static SettingsTab s_pending_tab = SettingsTab::kNetwork;
+static lv_obj_t* s_settings_scr = nullptr; // 当前设置壳；async 删旧屏时勿清新屏指针
 
-int TabIndexOf(SettingsTab id) {
+static int TabIndexOf(SettingsTab id) {
     for (int i = 0; i < kTabCount; ++i) {
         if (kTabs[i].id == id) {
             return i;
@@ -93,8 +97,6 @@ int TabIndexOf(SettingsTab id) {
     }
     return 0;
 }
-
-// 返回栈重建时落到当前 Tab（测试专用入口）。
 ScreenFactory FactoryForTab(SettingsTab id) {
     if (id == SettingsTab::kTest) {
         return SettingsScreen::CreateTest;
@@ -102,11 +104,11 @@ ScreenFactory FactoryForTab(SettingsTab id) {
     return SettingsScreen::Create;
 }
 
-void RefreshBackFactory(SettingsTab id) {
+static void RefreshBackFactory(SettingsTab id) {
     VkKey_SetScreenFactory(kScreenId, FactoryForTab(id));
 }
 
-void ResetTab(SettingsTab id) {
+static void ResetTab(SettingsTab id) {
     switch (id) {
         case SettingsTab::kNetwork:
             SettingsNetworkTab_Reset();
@@ -135,13 +137,16 @@ void ResetTab(SettingsTab id) {
         case SettingsTab::kTest:
             SettingsTestTab_Reset();
             break;
+        case SettingsTab::kLog:
+            SettingsLogTab_Reset();
+            break;
         case SettingsTab::kAbout:
             SettingsAboutTab_Reset();
             break;
     }
 }
 
-void BuildTab(SettingsTab id) {
+static void BuildTab(SettingsTab id) {
     lv_obj_t* page = s_ui.content_page;
     if (page == nullptr) {
         return;
@@ -174,6 +179,9 @@ void BuildTab(SettingsTab id) {
         case SettingsTab::kTest:
             SettingsTestTab_Build(page);
             break;
+        case SettingsTab::kLog:
+            SettingsLogTab_Build(page);
+            break;
         case SettingsTab::kAbout:
             SettingsAboutTab_Build(page);
             break;
@@ -181,7 +189,7 @@ void BuildTab(SettingsTab id) {
     s_ui.content_built = true;
 }
 
-void TearDownActiveTab() {
+static void DeactivateActiveTabLiveWork() {
     if (s_ui.content_page == nullptr || !s_ui.content_built || s_ui.active_tab < 0 ||
         s_ui.active_tab >= kTabCount) {
         return;
@@ -193,13 +201,40 @@ void TearDownActiveTab() {
     if (id == SettingsTab::kTest) {
         SettingsTestTab_OnDeactivated();
     }
+}
+
+static void ReactivateActiveTabLiveWork() {
+    if (s_ui.content_page == nullptr || !s_ui.content_built || s_ui.active_tab < 0 ||
+        s_ui.active_tab >= kTabCount) {
+        return;
+    }
+    const SettingsTab id = kTabs[s_ui.active_tab].id;
+    if (id == SettingsTab::kConversation) {
+        SettingsConversationTab_OnActivated();
+    }
+    if (id == SettingsTab::kBluetooth) {
+        SettingsBluetoothTab_OnActivated();
+    }
+    if (id == SettingsTab::kTest) {
+        SettingsTestTab_OnActivated();
+    }
+}
+
+bool s_tab_live_paused_for_standby = false;
+
+static void TearDownActiveTab() {
+    if (s_ui.content_page == nullptr || !s_ui.content_built || s_ui.active_tab < 0 ||
+        s_ui.active_tab >= kTabCount) {
+        return;
+    }
+    DeactivateActiveTabLiveWork();
     // Reset 先清 alive/指针，异步回调不再碰已删控件
-    ResetTab(id);
+    ResetTab(kTabs[s_ui.active_tab].id);
     lv_obj_clean(s_ui.content_page);
     s_ui.content_built = false;
 }
 
-void ShowTab(int index) {
+static void ShowTab(int index) {
     if (index < 0 || index >= kTabCount) {
         return;
     }
@@ -209,6 +244,7 @@ void ShowTab(int index) {
 
     TearDownActiveTab();
     s_ui.active_tab = index;
+    ESP_LOGI(TAG, "tab %s", kTabs[index].name());
 
     for (int i = 0; i < kTabCount; ++i) {
         if (s_ui.tab_btns[i] != nullptr) {
@@ -232,12 +268,12 @@ void ShowTab(int index) {
     RefreshBackFactory(id);
 }
 
-void OnTabClicked(lv_event_t* e) {
+static void OnTabClicked(lv_event_t* e) {
     const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
     ShowTab(index);
 }
 
-lv_obj_t* CreateTabButton(lv_obj_t* parent, const TabEntry& entry, int index) {
+static lv_obj_t* CreateTabButton(lv_obj_t* parent, const SettingsTabEntry& entry, int index) {
     lv_obj_t* btn = lv_obj_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_set_size(btn, kSettingsTabW, kSettingsTabH);
@@ -259,32 +295,45 @@ lv_obj_t* CreateTabButton(lv_obj_t* parent, const TabEntry& entry, int index) {
     return btn;
 }
 
-bool OnSettingsVkKey(const char* key_name) {
+static bool OnSettingsVkKey(const char* key_name) {
+    return SettingsLogUpload_OnVkKey(key_name);
+}
+
+static bool OnSettingsVkKeyLongPress(const char* key_name) {
+    if (!SettingsLogUpload_IsActive()) {
+        return false;
+    }
+    // Home 长按：关上传层并回系统首页（短按只关层）
+    if (key_name != nullptr && std::strcmp(key_name, "vk_home") == 0) {
+        SettingsLogUpload_DismissAndGoHome();
+        return true;
+    }
+    return true; // 上传中吞掉其它键长按
+}
+
+static bool OnSettingsVkKeyPressUp(const char* key_name) {
+    // 上传中勿拦 Home 的 PressUp→Click 链路；仅吞连翻类键
+    if (SettingsLogUpload_IsActive() && key_name != nullptr &&
+        std::strcmp(key_name, "vk_home") != 0) {
+        return true;
+    }
     (void)key_name;
     return false;
 }
 
-bool OnSettingsVkKeyLongPress(const char* key_name) {
-    (void)key_name;
-    return false;
-}
-
-bool OnSettingsVkKeyPressUp(const char* key_name) {
-    (void)key_name;
-    return false;
-}
-
-void OnScreenDeleted(lv_event_t* e) {
+static void OnScreenDeleted(lv_event_t* e) {
     // ScreenLoadReplace 会 async 删旧屏；勿清掉新设置页的 s_ui（否则右侧内容变空白）
     if (lv_event_get_target(e) != s_settings_scr) {
         return;
     }
     TearDownActiveTab();
+    s_tab_live_paused_for_standby = false;
     s_ui = {};
     s_settings_scr = nullptr;
 }
 
-lv_obj_t* CreateInternal() {
+static lv_obj_t* CreateInternal() {
+    ESP_LOGI(TAG, "launch SettingsScreen");
     s_ui = {};
 
     lv_obj_t* scr = lv_obj_create(nullptr);
@@ -358,14 +407,31 @@ lv_obj_t* CreateInternal() {
                                        nullptr, nullptr, OnSettingsVkKeyLongPress,
                                        OnSettingsVkKeyPressUp});
     ShowTab(TabIndexOf(open_tab));
-    ESP_LOGI(TAG, "settings ready tabs=%d open=%d network=%s card_style=%d haptic=%d idle_mhz=%d",
+    ESP_LOGD(TAG, "settings ready tabs=%d open=%d network=%s card_style=%d haptic=%d idle_mhz=%d",
              kTabCount, static_cast<int>(open_tab), SettingsNetworkTab_CurrentName(),
              HomeScreen::LoadCardStyle(), HapticIsEnabled() ? 1 : 0,
              PowerPolicy::GetInstance().GetIdleCpuMhz());
     return scr;
 }
 
-}  // namespace
+static void PauseSettingsTabLiveWorkForStandby() {
+    if (s_settings_scr == nullptr || s_tab_live_paused_for_standby) {
+        return;
+    }
+    DeactivateActiveTabLiveWork();
+    s_tab_live_paused_for_standby = true;
+    ESP_LOGD(TAG, "standby pause tab live work (tab=%d)", s_ui.active_tab);
+}
+
+static void ResumeSettingsTabLiveWorkFromStandby() {
+    if (!s_tab_live_paused_for_standby) {
+        return;
+    }
+    s_tab_live_paused_for_standby = false;
+    ReactivateActiveTabLiveWork();
+    ESP_LOGD(TAG, "standby resume tab live work (tab=%d)", s_ui.active_tab);
+}
+
 
 lv_obj_t* SettingsScreen::Create() {
     s_pending_tab = SettingsTab::kNetwork;
@@ -380,4 +446,12 @@ lv_obj_t* SettingsScreen::CreateTest() {
 void SettingsScreen::ReloadAfterLanguageChange() {
     s_pending_tab = SettingsTab::kLanguage;
     ScreenLoadReplace(CreateInternal());
+}
+
+void SettingsScreen_OnEnterStandby() {
+    PauseSettingsTabLiveWorkForStandby();
+}
+
+void SettingsScreen_OnResumeFromStandby() {
+    ResumeSettingsTabLiveWorkFromStandby();
 }

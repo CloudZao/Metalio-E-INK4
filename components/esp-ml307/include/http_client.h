@@ -138,8 +138,8 @@ private:
     size_t chunk_size_ = 0;
     size_t chunk_received_ = 0;
 
-    // 接收任务会回调 this；必须最后析构，保证上面的锁和解析状态仍有效。
-    std::unique_ptr<Tcp> tcp_;
+    // 接收任务会回调 this；Open 内用 shared_ptr 钉住 Connect，避免并发 Close 提前析构 Tcp
+    std::shared_ptr<Tcp> tcp_;
 
     // 私有方法
     bool ParseUrl(const std::string& url);

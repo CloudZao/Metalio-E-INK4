@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 
-// 设置 → 主题：首页样式（白底 / 网点灰底 / 黑色描边 / 斜切棋盘）
+/** @brief 构建设置→主题页选项 */
 void SettingsThemeTab_Build(lv_obj_t* page);
+/** @brief 重置主题页 UI 指针 */
 void SettingsThemeTab_Reset();

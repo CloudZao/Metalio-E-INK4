@@ -167,7 +167,6 @@ void LvglDisplay::UpdateStatusBar(bool update_all) {
             if (strcmp(icon, FONT_AWESOME_BATTERY_EMPTY) == 0 && discharging) {
                 if (lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // Show if low battery popup is hidden
                     lv_obj_remove_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
-                    app.PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
                 }
             } else {
                 // Hide the low battery popup when the battery is not empty

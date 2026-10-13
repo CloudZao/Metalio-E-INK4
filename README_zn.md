@@ -94,7 +94,7 @@ ESP32-S3 的 USB DM/DP（GPIO19/20）经板载 **FSUSB42UMX** 二选一开关，
 - **开关机**：侧面电源键接入开关机芯片；固件经 TCA9555 **P1.3**（`PWR_KEY_PULSE`，原理图 P13）输出脉冲做软件关机
 - **空闲策略**（「设置 → 功耗」，`PowerPolicy`）：
   - **无操作进浅睡待机**：默认 **3 分钟**（可选 10 / 30 分钟）→ 待机 Overlay（经典时钟 / 壁纸）
-  - **浅睡累计关机**：默认 **3 分钟**（可选 10 / 30 分钟）
+  - **浅睡累计关机**：默认 **30 分钟**（可选 3 / 10 / 30 分钟、3 / 6 小时或永不）；「永不」时浅睡仍按 **60 秒**切片定时唤醒
   - **AppIdle CPU**：80 / 160 / **240 MHz**（默认 240）；可关 Wi-Fi 降功耗
   - **断网暂留**：无保网需求后仍保网 **30 / 60 / 120 秒**
 - **按键**：
@@ -407,7 +407,7 @@ merge_firmware.sh                  # 编译并合并完整 bin
 | `ota_0` / `ota_1` | 各 5MB | 双 OTA 应用 |
 | `resources` | 400K | 资源 SPIFFS |
 | `font_data` | 5MB | UI fontpack（mmap） |
-| `coredump` | 64K | 崩溃转储 |
+| `coredump` | 64K | 崩溃转储（开机在日志开启且 SD 已挂时覆盖写入 `metalio/e-ink/logs/metalio_coredump.elf` 后擦槽） |
 
 > 仓库另有 `partitions/v2/`（assets 方案）说明，**当前板配置未启用**。分区表偏移 `CONFIG_PARTITION_TABLE_OFFSET=0x8000`。
 
@@ -416,6 +416,10 @@ merge_firmware.sh                  # 编译并合并完整 bin
 ## 10. 云端服务与 API
 
 云端域名与 HTTP 路径统一写在 `main/cloudzao_endpoints.c`；业务侧只通过 `main/api_endpoints.h` 组 URL。当前开源构建默认使用空字符串，表示未接入私有云端点；如需接入自己的服务，可在该文件中填充真实地址并保留符号名不变。
+
+百问AI、小智AI、云信AI的地址、应用标识和 Token 都集中在 `main/cloudzao_endpoints.c`。本仓库按发布规则将这些配置留空，本地接入服务时需自行填写；小智和云信的对话配置接口与 Cloudzao 固件升级接口相互独立。
+
+提交和发布前执行 `python scripts/blank_cloudzao_endpoints.py` 清空配置，再执行 `python scripts/blank_cloudzao_endpoints.py --check` 检查。仓库原有的提交钩子、推送检查和 CI 规则继续保留。
 
 语音主通道仍为 **WebSocket / MQTT+UDP**（见 `docs/websocket.md`、`docs/mqtt-udp.md`）。设备能力可通过 **MCP** 暴露给 LLM（`docs/mcp-protocol.md`、`docs/mcp-usage.md`）。
 
@@ -465,6 +469,7 @@ merge_firmware.sh                  # 编译并合并完整 bin
 - 格式：`.ebook` / `.epub` / `.txt`；`.txt.idx` 分页索引；旁路封面 `.a2i1`
 - 阅读字体：`.../fonts/*.ef`（默认偏好如 `misans_25_2.ef`）
 - 排版偏好写入 NVS；**列表与正文禁止滚动**；虚拟键 / 音量键（TCA9555 **P0.7** / **P1.0**）翻页
+- 正文可竖屏 / 左横 / 右横；横屏下阅读设置、目录、触摸分区「选择动作」左右分栏（中缝粗竖线上下留缝）
 - 开机可同步阅读进度到云端 `library/sync`
 - PC 侧转换：[`tools/ebook/README.md`](tools/ebook/README.md)
 
@@ -696,3 +701,16 @@ FAT32；确认 SDMMC 1-bit 引脚；DAT3（GPIO46）须保持高。
 ---
 
 *本文档随固件迭代更新。引脚或功能以仓库源码为准；若与实物不符，请提交 Issue。*
+
+
+### AI 对话云服务切换
+
+在「设置 → 对话 → 云服务切换」选择「百问AI」「小智AI」或「云信AI」。默认使用百问AI，选择保存到设备 NVS 后自动重启，重启后使用新云服务。
+
+小智AI通过 `https://api.tenclass.net/xiaozhi/ota/` 获取激活信息和对话连接配置。首次使用按设备显示的验证码完成小智平台绑定。优先使用服务器下发的 WebSocket 配置，也支持仅下发 MQTT 的情况。三套云服务的连接凭据分别保存，切换不覆盖其他服务的配置。小智服务返回的通用固件不用于本设备升级。
+
+小智使用手动对话：按住 BOOT 或屏幕说话按钮录音，松开发送；回答结束后回到待命。识别文字与回答文字显示在现有对话分页中，并沿用本地历史记录。三种服务均显示语音播报开关：百问AI进入设置时通过 GET 查询当前状态、修改时通过 PUT 请求确认；小智AI、云信AI各自使用独立的本地 NVS 开关，默认开启，修改立即生效，关闭后继续显示回答文字但不播放语音。
+
+云信AI保留原 OTA 地址，对话直接使用 `wss://mps.yunxinvcloud.com/?device_id=<当前设备MAC>&app_key=30ce8388c425bc334ea192226c74dd2f`，认证 token 为 `test-token`，不依赖 OTA 下发对话连接配置；手动对话、文字显示、本地 TTS 和激活流程与小智一致，切换后自动重启。激活地址拼接时保留 OTA URL 的查询参数。
+
+设备验收：分别切换三种服务并重启，检查首页名称、首次激活、按住录音／松开发送、播报结束待命、下一轮对话、离页重进、断网重连，以及切回百问后原有对话和播报设置。

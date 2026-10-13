@@ -18,12 +18,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestAuto";
-constexpr const char* kScreenId = "settings_test_auto";
+static constexpr const char* TAG = "SettingsTestAuto";
+static constexpr const char* kScreenId = "settings_test_auto";
 
-void StartAutoTests() {
+static void StartAutoTests() {
     auto& ui = SettingsTest_Ui();
     ui.active = true;
     ui.cell_state = SettingsTestCellState::Idle;
@@ -55,8 +54,7 @@ void StartAutoTests() {
     SettingsTestWifi_ScheduleScan();
     SettingsTestCell_StartAutoSequence();
 }
-
-void ShowRestartHintAndReboot() {
+static void ShowRestartHintAndReboot() {
     // 退页 DELETE 时原 screen 已在拆；提示画在 layer_top，给墨水屏一点刷新时间
     lv_obj_t* top = lv_layer_top();
     if (top != nullptr) {
@@ -79,7 +77,7 @@ void ShowRestartHintAndReboot() {
     esp_restart();
 }
 
-void OnScreenDeleted(lv_event_t* /*e*/) {
+static void OnScreenDeleted(lv_event_t* /*e*/) {
     SettingsTest_BeginShutdown();
     SettingsTestSensors_StopPollTimer();
     SettingsTestCell_StopStartTimer();
@@ -99,7 +97,6 @@ void OnScreenDeleted(lv_event_t* /*e*/) {
     ShowRestartHintAndReboot();
 }
 
-}  // namespace
 
 lv_obj_t* SettingsTestAutoScreen::Create() {
     ESP_LOGI(TAG, "create auto test screen");

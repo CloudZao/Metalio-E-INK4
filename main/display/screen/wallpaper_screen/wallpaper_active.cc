@@ -1,56 +1,53 @@
 #include "wallpaper_screen/wallpaper_active.h"
+#include "wallpaper_screen/wallpaper_screen_priv.h"
 
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <sys/stat.h>
+#include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include "assets/lang_config.h"
 #include "SdCardManager.hpp"
 #include "screen_common.h"
 #include "sd_paths.h"
 #include "settings.h"
 
-#include <atomic>
-#include <cstdio>
-#include <cstring>
-#include <string>
 
-#include <esp_log.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <lvgl.h>
-#include <sys/stat.h>
-#include "assets/lang_config.h"
+static constexpr const char* kLogTag = "WpActive";
+static constexpr const char* kNvsNs = "wallpaper";
+static constexpr const char* kNvsKeyShutdown = "shutdown";
+static constexpr const char* kNvsKeyStandby = "standby";
+static constexpr size_t kNameMax = 95;
 
-namespace wallpaper {
-namespace {
+enum class WallpaperActiveSlot : uint8_t { Shutdown = 0, Standby = 1, Count = 2 };
 
-constexpr const char* TAG = "WpActive";
-constexpr const char* kNvsNs = "wallpaper";
-constexpr const char* kNvsKeyShutdown = "shutdown";
-constexpr const char* kNvsKeyStandby = "standby";
-constexpr size_t kNameMax = 95;
+static char s_names[static_cast<size_t>(WallpaperActiveSlot::Count)][kNameMax + 1] = {};
+static std::atomic<bool> s_cache_ready{false};
+static std::atomic<bool> s_hydrate_busy{false};
 
-enum class Slot : uint8_t { Shutdown = 0, Standby = 1, Count = 2 };
-
-char s_names[static_cast<size_t>(Slot::Count)][kNameMax + 1] = {};
-std::atomic<bool> s_cache_ready{false};
-std::atomic<bool> s_hydrate_busy{false};
-
-struct HydrateWork {
-    HydrateDoneFn done = nullptr;
+struct WallpaperActiveHydrateWork {
+    Wallpaper_HydrateDoneFn done = nullptr;
     void* user = nullptr;
 };
 
-const char* NvsKeyFor(Slot slot) {
-    return slot == Slot::Standby ? kNvsKeyStandby : kNvsKeyShutdown;
+static const char* NvsKeyFor(WallpaperActiveSlot slot) {
+    return slot == WallpaperActiveSlot::Standby ? kNvsKeyStandby : kNvsKeyShutdown;
+}
+static const char* SlotTag(WallpaperActiveSlot slot) {
+    return slot == WallpaperActiveSlot::Standby ? "standby" : "shutdown";
 }
 
-const char* SlotTag(Slot slot) {
-    return slot == Slot::Standby ? "standby" : "shutdown";
-}
-
-bool FileExistsRegular(const char* path) {
+static bool FileExistsRegular(const char* path) {
     struct stat st {};
     return path != nullptr && stat(path, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
 }
 
-std::string AbsPathForName(const std::string& name) {
+static std::string AbsPathForName(const std::string& name) {
     std::string path = SD_PATH_WALLPAPER;
     if (!path.empty() && path.back() != '/') {
         path.push_back('/');
@@ -60,7 +57,7 @@ std::string AbsPathForName(const std::string& name) {
 }
 
 // 仅允许单段、无路径穿越的文件名。
-bool IsSafeWallpaperBasename(const char* name) {
+static bool IsSafeWallpaperBasename(const char* name) {
     if (name == nullptr || name[0] == '\0') {
         return false;
     }
@@ -83,7 +80,7 @@ bool IsSafeWallpaperBasename(const char* name) {
     return true;
 }
 
-std::string BasenameOf(const char* path_or_name) {
+static std::string BasenameOf(const char* path_or_name) {
     if (path_or_name == nullptr || path_or_name[0] == '\0') {
         return {};
     }
@@ -95,7 +92,7 @@ std::string BasenameOf(const char* path_or_name) {
     return base;
 }
 
-void SetSlotCache(Slot slot, const char* name) {
+static void SetSlotCache(WallpaperActiveSlot slot, const char* name) {
     const size_t i = static_cast<size_t>(slot);
     if (name == nullptr || name[0] == '\0') {
         s_names[i][0] = '\0';
@@ -104,11 +101,11 @@ void SetSlotCache(Slot slot, const char* name) {
     }
 }
 
-void MarkCacheReady() {
+static void MarkCacheReady() {
     s_cache_ready.store(true, std::memory_order_release);
 }
 
-void PersistSlotToNvs(Slot slot, const char* name) {
+static void PersistSlotToNvs(WallpaperActiveSlot slot, const char* name) {
     Settings settings(kNvsNs, true);
     const char* key = NvsKeyFor(slot);
     if (name == nullptr || name[0] == '\0') {
@@ -119,7 +116,7 @@ void PersistSlotToNvs(Slot slot, const char* name) {
 }
 
 // 读取 NVS 值并做合法性校验；非法值返回空并要求清理。
-std::string ReadSlotNameFromNvs(Slot slot, bool* should_erase) {
+static std::string ReadSlotNameFromNvs(WallpaperActiveSlot slot, bool* should_erase) {
     if (should_erase != nullptr) {
         *should_erase = false;
     }
@@ -137,11 +134,11 @@ std::string ReadSlotNameFromNvs(Slot slot, bool* should_erase) {
     return name;
 }
 
-void LoadAllFromNvsIntoCache() {
+static void LoadAllFromNvsIntoCache() {
     // 先灌入两槽；若 SD 未挂载则延迟标记缓存已就绪。
     bool defer_ready = false;
-    for (uint8_t s = 0; s < static_cast<uint8_t>(Slot::Count); ++s) {
-        const Slot slot = static_cast<Slot>(s);
+    for (uint8_t s = 0; s < static_cast<uint8_t>(WallpaperActiveSlot::Count); ++s) {
+        const WallpaperActiveSlot slot = static_cast<WallpaperActiveSlot>(s);
         bool erase = false;
         const std::string name = ReadSlotNameFromNvs(slot, &erase);
         if (erase) {
@@ -156,17 +153,17 @@ void LoadAllFromNvsIntoCache() {
         const std::string path = AbsPathForName(name);
         if (FileExistsRegular(path.c_str())) {
             SetSlotCache(slot, name.c_str());
-            ESP_LOGI(TAG, "hydrate %s=%s", SlotTag(slot), name.c_str());
+    ESP_LOGD(kLogTag, "hydrate %s=%s", SlotTag(slot), name.c_str());
             continue;
         }
         if (SdCardManager::GetInstance().IsMounted()) {
-            ESP_LOGW(TAG, "hydrate %s NVS=%s missing on SD → clear", SlotTag(slot), name.c_str());
+            ESP_LOGW(kLogTag, "hydrate %s NVS=%s missing on SD → clear", SlotTag(slot), name.c_str());
             PersistSlotToNvs(slot, nullptr);
             SetSlotCache(slot, "");
         } else {
             SetSlotCache(slot, "");
             defer_ready = true;
-            ESP_LOGW(TAG, "hydrate SD unmounted, keep NVS %s=%s", SlotTag(slot), name.c_str());
+            ESP_LOGW(kLogTag, "hydrate SD unmounted, keep NVS %s=%s", SlotTag(slot), name.c_str());
         }
     }
     if (!defer_ready) {
@@ -174,14 +171,14 @@ void LoadAllFromNvsIntoCache() {
     }
 }
 
-void InvokeDoneAsync(HydrateDoneFn done, void* user) {
+static void InvokeDoneAsync(Wallpaper_HydrateDoneFn done, void* user) {
     if (done == nullptr) {
         return;
     }
-    auto* cb = new HydrateWork{done, user};
+    auto* cb = new WallpaperActiveHydrateWork{done, user};
     if (!ScreenLvAsync(
             [](void* p) {
-                auto* c = static_cast<HydrateWork*>(p);
+                auto* c = static_cast<WallpaperActiveHydrateWork*>(p);
                 if (c->done != nullptr) {
                     c->done(c->user);
                 }
@@ -192,10 +189,10 @@ void InvokeDoneAsync(HydrateDoneFn done, void* user) {
     }
 }
 
-void HydrateTask(void* arg) {
-    auto* work = static_cast<HydrateWork*>(arg);
+static void HydrateTask(void* arg) {
+    auto* work = static_cast<WallpaperActiveHydrateWork*>(arg);
     LoadAllFromNvsIntoCache();
-    const HydrateDoneFn done = work != nullptr ? work->done : nullptr;
+    const Wallpaper_HydrateDoneFn done = work != nullptr ? work->done : nullptr;
     void* user = work != nullptr ? work->user : nullptr;
     delete work;
     s_hydrate_busy.store(false, std::memory_order_release);
@@ -203,19 +200,19 @@ void HydrateTask(void* arg) {
     vTaskDelete(nullptr);
 }
 
-void WaitThenDoneTask(void* arg) {
-    auto* work = static_cast<HydrateWork*>(arg);
+static void WaitThenDoneTask(void* arg) {
+    auto* work = static_cast<WallpaperActiveHydrateWork*>(arg);
     for (int i = 0; i < 200 && !s_cache_ready.load(std::memory_order_acquire); ++i) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    const HydrateDoneFn done = work != nullptr ? work->done : nullptr;
+    const Wallpaper_HydrateDoneFn done = work != nullptr ? work->done : nullptr;
     void* user = work != nullptr ? work->user : nullptr;
     delete work;
     InvokeDoneAsync(done, user);
     vTaskDelete(nullptr);
 }
 
-std::string GetSlotFilename(Slot slot) {
+static std::string GetSlotFilename(WallpaperActiveSlot slot) {
     if (!s_cache_ready.load(std::memory_order_acquire)) {
         return {};
     }
@@ -231,7 +228,7 @@ std::string GetSlotFilename(Slot slot) {
     return name;
 }
 
-bool SetSlotFromFile(Slot slot, const char* path_or_name, std::string& err_out) {
+static bool SetSlotFromFile(WallpaperActiveSlot slot, const char* path_or_name, std::string& err_out) {
     err_out.clear();
     const std::string name = BasenameOf(path_or_name);
     if (name.empty()) {
@@ -257,21 +254,21 @@ bool SetSlotFromFile(Slot slot, const char* path_or_name, std::string& err_out) 
     SetSlotCache(slot, name.c_str());
     MarkCacheReady();
     PersistSlotToNvs(slot, name.c_str());
-    ESP_LOGI(TAG, "%s wallpaper -> %s (NVS only)", SlotTag(slot), name.c_str());
+    ESP_LOGI(kLogTag, "%s wallpaper -> %s (NVS only)", SlotTag(slot), name.c_str());
     return true;
 }
 
-void ClearSlot(Slot slot) {
+static void ClearSlot(WallpaperActiveSlot slot) {
     if (!s_cache_ready.load(std::memory_order_acquire)) {
         LoadAllFromNvsIntoCache();
     }
     SetSlotCache(slot, "");
     MarkCacheReady();
     PersistSlotToNvs(slot, nullptr);
-    ESP_LOGI(TAG, "cleared %s wallpaper (user)", SlotTag(slot));
+    ESP_LOGI(kLogTag, "cleared %s wallpaper (user)", SlotTag(slot));
 }
 
-void ClearSlotIfMatches(Slot slot, const char* filename, bool* any_cleared) {
+static void ClearSlotIfMatches(WallpaperActiveSlot slot, const char* filename, bool* any_cleared) {
     if (filename == nullptr || filename[0] == '\0') {
         return;
     }
@@ -293,13 +290,13 @@ void ClearSlotIfMatches(Slot slot, const char* filename, bool* any_cleared) {
 
     SetSlotCache(slot, "");
     PersistSlotToNvs(slot, nullptr);
-    ESP_LOGI(TAG, "cleared %s wallpaper (%s)", SlotTag(slot), filename);
+    ESP_LOGI(kLogTag, "cleared %s wallpaper (%s)", SlotTag(slot), filename);
     if (any_cleared != nullptr) {
         *any_cleared = true;
     }
 }
 
-bool TryResolveSlotPath(Slot slot, char* out_path, size_t out_len) {
+static bool TryResolveSlotPath(WallpaperActiveSlot slot, char* out_path, size_t out_len) {
     if (out_path == nullptr || out_len < 8) {
         return false;
     }
@@ -322,86 +319,85 @@ bool TryResolveSlotPath(Slot slot, char* out_path, size_t out_len) {
 
     const std::string path = AbsPathForName(name);
     if (path.size() + 1 > out_len) {
-        ESP_LOGW(TAG, "%s path too long", SlotTag(slot));
+        ESP_LOGW(kLogTag, "%s path too long", SlotTag(slot));
         return false;
     }
     if (!FileExistsRegular(path.c_str())) {
-        ESP_LOGW(TAG, "%s path missing: %s", SlotTag(slot), path.c_str());
+        ESP_LOGW(kLogTag, "%s path missing: %s", SlotTag(slot), path.c_str());
         return false;
     }
     std::snprintf(out_path, out_len, "%s", path.c_str());
     return true;
 }
 
-}  // namespace
 
-std::string GetActiveFilename() {
-    return GetSlotFilename(Slot::Shutdown);
+std::string Wallpaper_GetActiveFilename() {
+    return GetSlotFilename(WallpaperActiveSlot::Shutdown);
 }
 
-std::string GetStandbyFilename() {
-    return GetSlotFilename(Slot::Standby);
+std::string Wallpaper_GetStandbyFilename() {
+    return GetSlotFilename(WallpaperActiveSlot::Standby);
 }
 
-bool IsActiveFilename(const char* filename) {
+bool Wallpaper_IsActiveFilename(const char* filename) {
     if (filename == nullptr || filename[0] == '\0') {
         return false;
     }
-    const std::string active = GetActiveFilename();
+    const std::string active = Wallpaper_GetActiveFilename();
     return !active.empty() && active == filename;
 }
 
-bool IsStandbyFilename(const char* filename) {
+bool Wallpaper_IsStandbyFilename(const char* filename) {
     if (filename == nullptr || filename[0] == '\0') {
         return false;
     }
-    const std::string active = GetStandbyFilename();
+    const std::string active = Wallpaper_GetStandbyFilename();
     return !active.empty() && active == filename;
 }
 
-bool SetActiveFromFile(const char* path_or_name, std::string& err_out) {
-    return SetSlotFromFile(Slot::Shutdown, path_or_name, err_out);
+bool Wallpaper_SetActiveFromFile(const char* path_or_name, std::string& err_out) {
+    return SetSlotFromFile(WallpaperActiveSlot::Shutdown, path_or_name, err_out);
 }
 
-bool SetStandbyFromFile(const char* path_or_name, std::string& err_out) {
-    return SetSlotFromFile(Slot::Standby, path_or_name, err_out);
+bool Wallpaper_SetStandbyFromFile(const char* path_or_name, std::string& err_out) {
+    return SetSlotFromFile(WallpaperActiveSlot::Standby, path_or_name, err_out);
 }
 
-void ClearShutdownWallpaper() {
-    ClearSlot(Slot::Shutdown);
+void Wallpaper_ClearShutdownWallpaper() {
+    ClearSlot(WallpaperActiveSlot::Shutdown);
 }
 
-void ClearStandbyWallpaper() {
-    ClearSlot(Slot::Standby);
+void Wallpaper_ClearStandbyWallpaper() {
+    ClearSlot(WallpaperActiveSlot::Standby);
 }
 
-void ClearActiveIfMatches(const char* filename) {
+void Wallpaper_ClearActiveIfMatches(const char* filename) {
     // 删除文件后，同步清理所有指向它的启用项。
     const bool was_ready = s_cache_ready.load(std::memory_order_acquire);
     bool any = false;
-    ClearSlotIfMatches(Slot::Shutdown, filename, &any);
-    ClearSlotIfMatches(Slot::Standby, filename, &any);
+    ClearSlotIfMatches(WallpaperActiveSlot::Shutdown, filename, &any);
+    ClearSlotIfMatches(WallpaperActiveSlot::Standby, filename, &any);
     // 未 hydrate 时不要标记 ready，以免把另一槽状态覆盖为空。
     if (any && was_ready) {
         MarkCacheReady();
     }
 }
 
-bool TryResolveActiveWallpaperPath(char* out_path, size_t out_len) {
-    return TryResolveSlotPath(Slot::Shutdown, out_path, out_len);
+bool Wallpaper_TryResolveActiveWallpaperPath(char* out_path, size_t out_len) {
+    return TryResolveSlotPath(WallpaperActiveSlot::Shutdown, out_path, out_len);
 }
 
-bool TryResolveStandbyWallpaperPath(char* out_path, size_t out_len) {
-    return TryResolveSlotPath(Slot::Standby, out_path, out_len);
+bool Wallpaper_TryResolveStandbyWallpaperPath(char* out_path, size_t out_len) {
+    return TryResolveSlotPath(WallpaperActiveSlot::Standby, out_path, out_len);
 }
 
-void RequestHydrateFromNvs(HydrateDoneFn done, void* user) {
+void Wallpaper_RequestHydrateFromNvs(Wallpaper_HydrateDoneFn done, void* user) {
     if (s_cache_ready.load(std::memory_order_acquire)) {
         InvokeDoneAsync(done, user);
         return;
     }
 
-    auto* work = new HydrateWork{done, user};
+    auto* work = new WallpaperActiveHydrateWork{done, user};
     if (s_hydrate_busy.exchange(true, std::memory_order_acq_rel)) {
         if (xTaskCreate(WaitThenDoneTask, "wp_hyd_wait", 3072, work, 5, nullptr) != pdPASS) {
             delete work;
@@ -413,12 +409,12 @@ void RequestHydrateFromNvs(HydrateDoneFn done, void* user) {
     if (xTaskCreate(HydrateTask, "wp_hydrate", 4096, work, 5, nullptr) != pdPASS) {
         delete work;
         s_hydrate_busy.store(false, std::memory_order_release);
-        ESP_LOGE(TAG, "hydrate task create failed");
+        ESP_LOGE(kLogTag, "hydrate task create failed");
         InvokeDoneAsync(done, user);
     }
 }
 
-void HydrateFromNvsNow() {
+void Wallpaper_HydrateFromNvsNow() {
     if (s_cache_ready.load(std::memory_order_acquire)) {
         return;
     }
@@ -431,5 +427,3 @@ void HydrateFromNvsNow() {
     LoadAllFromNvsIntoCache();
     s_hydrate_busy.store(false, std::memory_order_release);
 }
-
-}  // namespace wallpaper

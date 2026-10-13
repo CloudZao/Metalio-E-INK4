@@ -3,6 +3,7 @@
 #include "application.h"
 #include "settings.h"
 #include "api_endpoints.h"
+#include "chat_cloud.h"
 
 #include <esp_log.h>
 #include <cstring>
@@ -51,7 +52,7 @@ bool MqttProtocol::Start() {
 }
 
 bool MqttProtocol::StartMqttClient(bool report_error) {
-    if (!api::HasHost()) {
+    if (!chat_cloud::Available()) {
         ESP_LOGI(TAG, "mqtt skipped: blank cloud endpoints");
         if (report_error) {
             SetError(Lang::Strings::SERVER_NOT_CONNECTED);
@@ -64,7 +65,7 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
         mqtt_.reset();
     }
 
-    Settings settings("mqtt", false);
+    Settings settings(chat_cloud::MqttNamespace(), false);
     auto endpoint = settings.GetString("endpoint");
     auto client_id = settings.GetString("client_id");
     auto username = settings.GetString("username");

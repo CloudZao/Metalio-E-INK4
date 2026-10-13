@@ -67,46 +67,50 @@ bool WebSocket::IsConnected() const {
 }
 
 bool WebSocket::Connect(const char* uri) {
-    std::string uri_str(uri);
-    std::string protocol, host, port, path;
-    size_t pos = 0;
-    size_t next_pos = 0;
-
-    // 解析协议
-    next_pos = uri_str.find("://");
-    if (next_pos == std::string::npos) {
+    if (uri == nullptr) {
         ESP_LOGE(TAG, "Invalid URI format");
         return false;
     }
-    protocol = uri_str.substr(0, next_pos);
-    pos = next_pos + 3;
-
-    // 解析主机
-    next_pos = uri_str.find(':', pos);
-    if (next_pos == std::string::npos) {
-        next_pos = uri_str.find('/', pos);
-        if (next_pos == std::string::npos) {
-            host = uri_str.substr(pos);
-            path = "/";
-        } else {
-            host = uri_str.substr(pos, next_pos - pos);
-            path = uri_str.substr(next_pos);
-        }
-        port = (protocol == "wss") ? "443" : "80";
-    } else {
-        host = uri_str.substr(pos, next_pos - pos);
-        pos = next_pos + 1;
-        
-        // 解析端口
-        next_pos = uri_str.find('/', pos);
-        if (next_pos == std::string::npos) {
-            port = uri_str.substr(pos);
-            path = "/";
-        } else {
-            port = uri_str.substr(pos, next_pos - pos);
-            path = uri_str.substr(next_pos);
-        }
+    std::string uri_str(uri);
+    std::string protocol, host, port, path;
+    const size_t scheme_end = uri_str.find("://");
+    if (scheme_end == std::string::npos) {
+        ESP_LOGE(TAG, "Invalid URI format");
+        return false;
     }
+    protocol = uri_str.substr(0, scheme_end);
+    const size_t host_start = scheme_end + 3;
+    // Only search for a port in the authority, never in the path/query.
+    // In particular, device_id=10:20:... is not a host:port separator.
+    const size_t authority_end = uri_str.find_first_of("/?#", host_start);
+    const std::string authority = uri_str.substr(host_start,
+        authority_end == std::string::npos ? std::string::npos : authority_end - host_start);
+    const size_t port_separator = authority.find(':');
+    host = authority.substr(0, port_separator);
+    port = port_separator == std::string::npos
+        ? ((protocol == "wss" || protocol == "https") ? "443" : "80")
+        : authority.substr(port_separator + 1);
+    if (host.empty() || port.empty()) {
+        ESP_LOGE(TAG, "Invalid URI host or port");
+        return false;
+    }
+    // Validate without throwing std::stoi on malformed configuration.
+    int port_number = 0;
+    for (char digit : port) {
+        if (digit < '0' || digit > '9' || port_number > (65535 - (digit - '0')) / 10) {
+            ESP_LOGE(TAG, "Invalid URI port");
+            return false;
+        }
+        port_number = port_number * 10 + (digit - '0');
+    }
+    if (port_number == 0) {
+        ESP_LOGE(TAG, "Invalid URI port");
+        return false;
+    }
+    path = authority_end == std::string::npos ? "/" : uri_str.substr(authority_end);
+    const size_t fragment = path.find('#');
+    if (fragment != std::string::npos) { path.erase(fragment); }
+    if (path.empty() || path.front() == '?') { path.insert(0, "/"); }
 
     ESP_LOGD(TAG, "Connecting to %s://%s:%s%s", protocol.c_str(), host.c_str(), port.c_str(), path.c_str());
 
@@ -131,7 +135,7 @@ bool WebSocket::Connect(const char* uri) {
 
     connected_ = false;
     // 使用 tcp 建立连接
-    if (!tcp_->Connect(host, std::stoi(port))) {
+    if (!tcp_->Connect(host, port_number)) {
         ESP_LOGE(TAG, "Failed to connect to server");
         return false;
     }

@@ -9,13 +9,10 @@ set(SOURCES "audio/audio_codec.cc"
             "audio/codecs/es8389_audio_codec.cc"
             "audio/codecs/dummy_audio_codec.cc"
             "audio/processors/audio_debugger.cc"
-            "led/single_led.cc"
-            "led/circular_strip.cc"
-            "led/gpio_led.cc"
             "display/display.cc"
-            "display/lcd_display.cc"
-            "display/oled_display.cc"
             "display/lv_adapter_display.cc"
+            "display/display_orient.cc"
+            "display/epd_gray_aa.cc"
             "display/a2ui/a2ui.c"
             "display/a2ui/a2ui_render.c"
             "display/a2ui/a2ui_math.c"
@@ -28,25 +25,79 @@ set(SOURCES "audio/audio_codec.cc"
             "display/font/font_loader.c"
             "display/font/fontpack_lvgl.cc"
             "display/screen/screen_common.cc"
+            "display/screen/screen_common_nav.cc"
             "display/screen/vk_key_handler.cc"
             "display/screen/vk_page_repeat.cc"
             "display/screen/boot_key_handler.cc"
             "display/screen/home_screen/home_screen.cc"
+            "display/screen/home_screen/home_apps_slash.cc"
+            "display/screen/home_screen/home_card_style.cc"
             "display/screen/home_screen/home_hero.cc"
+            "display/screen/home_screen/home_hero_build.cc"
             "display/screen/checklist_cache.cc"
             "display/screen/standby_screen/standby_screen.cc"
             "display/screen/standby_screen/standby_classic.cc"
+            "display/screen/standby_screen/standby_classic_weather_store.cc"
+            "display/screen/standby_screen/standby_classic_weather_fetch.cc"
+            "display/screen/standby_screen/standby_classic_todos.cc"
             "display/screen/standby_screen/standby_wallpaper.cc"
             "display/screen/ota_upgrade_screen/ota_upgrade_screen.cc"
             "display/screen/ota_confirm_dialog/ota_confirm_dialog.cc"
             "display/screen/book_screen/book_screen.cc"
-            "display/screen/book_screen/book_reader_prefs.cc"
-            "display/screen/book_screen/book_cover_loader.cc"
+            "display/screen/book_screen/cover/book_cover_style.cc"
+            "display/screen/book_screen/book_font_runtime.cc"
+            "display/screen/book_screen/book_geom.cc"
+            "display/screen/book_screen/book_text_util.cc"
+            "display/screen/book_screen/book_nav.cc"
+            "display/screen/book_screen/reader/book_page_image.cc"
+            "display/screen/book_screen/cover/book_cover_workers.cc"
+            "display/screen/book_screen/reader/book_open_worker.cc"
+            "display/screen/book_screen/reader/book_layout_debounce.cc"
+            "display/screen/book_screen/reader/book_layout_worker.cc"
+            "display/screen/book_screen/reader/book_toc_footer.cc"
+            "display/screen/book_screen/reader/book_reader_body.cc"
+            "display/screen/book_screen/shelf/book_detail.cc"
+            "display/screen/book_screen/cover/book_cover_cell.cc"
+            "display/screen/book_screen/shelf/book_home.cc"
+            "display/screen/book_screen/book_vk.cc"
+            "display/screen/book_screen/shelf/book_bookshelf.cc"
+            "display/screen/book_screen/shelf/book_shelf_multi.cc"
+            "display/screen/book_screen/shelf/book_shelf_list.cc"
+            "display/screen/book_screen/shelf/book_shelf_delete.cc"
+            "display/screen/book_screen/reader/book_reader_overlay.cc"
+            "display/screen/book_screen/settings/book_settings_sheet.cc"
+            "display/screen/book_screen/settings/book_settings_font_ui.cc"
+            "display/screen/book_screen/settings/book_settings_opts_ui.cc"
+            "display/screen/book_screen/settings/book_font_multi.cc"
+            "display/screen/book_screen/settings/book_ttf_panel.cc"
+            "display/screen/book_screen/settings/book_ttf_actions.cc"
+            "display/screen/book_screen/settings/book_tap_ui.cc"
+            "display/screen/book_screen/reader/book_reader_prefs.cc"
+            "display/screen/book_screen/settings/book_tap_zones.cc"
+            "display/screen/book_screen/cover/book_cover_loader.cc"
             "display/screen/book_screen/book_cloud_library.cc"
             "display/screen/cloud_screen/cloud_screen.cc"
-            "display/screen/cloud_screen/push_resources_library.cc"
-            "display/screen/cloud_screen/wallpaper_cloud_library.cc"
+            "display/screen/cloud_screen/cloud_ui_helpers.cc"
+            "display/screen/cloud_screen/cloud_list.cc"
+            "display/screen/cloud_screen/cloud_chrome.cc"
+            "display/screen/cloud_screen/download/cloud_cover_thumbs.cc"
+            "display/screen/cloud_screen/download/cloud_download.cc"
+            "display/screen/cloud_screen/download/cloud_download_done.cc"
+            "display/screen/cloud_screen/cloud_dialogs.cc"
+            "display/screen/cloud_screen/cloud_fetch.cc"
+            "display/screen/cloud_screen/preview/cloud_wallpaper_preview.cc"
+            "display/screen/cloud_screen/push/push_resources_library.cc"
+            "display/screen/cloud_screen/push/push_resources_parse.cc"
+            "display/screen/cloud_screen/push/wallpaper_cloud_library.cc"
             "display/screen/wallpaper_screen/wallpaper_screen.cc"
+            "display/screen/wallpaper_screen/wallpaper_ui_helpers.cc"
+            "display/screen/wallpaper_screen/wallpaper_list.cc"
+            "display/screen/wallpaper_screen/thumbs/wallpaper_thumbs.cc"
+            "display/screen/wallpaper_screen/preview/wallpaper_preview.cc"
+            "display/screen/wallpaper_screen/wallpaper_ops.cc"
+            "display/screen/wallpaper_screen/preview/wallpaper_adjust.cc"
+            "display/screen/wallpaper_screen/preview/wallpaper_save.cc"
+            "display/screen/wallpaper_screen/wallpaper_multi.cc"
             "display/screen/wallpaper_screen/wallpaper_active.cc"
             "reader/zip_reader.cc"
             "reader/html_content.cc"
@@ -66,13 +117,26 @@ set(SOURCES "audio/audio_codec.cc"
             "reader/book_session.cc"
             "reader/txt_chapter.cc"
             "display/screen/task_screen/task_screen.cc"
+            "display/screen/task_screen/task_list.cc"
+            "display/screen/task_screen/task_render.cc"
+            "display/screen/task_screen/task_cache.cc"
             "display/screen/assistant_screen/assistant_screen.cc"
+            "display/screen/assistant_screen/assistant_ptt.cc"
+            "display/screen/assistant_screen/assistant_paginate.cc"
+            "display/screen/assistant_screen/assistant_render.cc"
+            "display/screen/assistant_screen/assistant_ingest.cc"
+            "display/screen/assistant_screen/assistant_flow.cc"
+            "display/screen/assistant_screen/assistant_fonts.cc"
             "display/screen/assistant_screen/assistant_chat_store.cc"
             "display/screen/assistant_screen/assistant_boot_photo.cc"
             "display/screen/settings_screen/settings_screen.cc"
             "display/screen/settings_screen/settings_common.cc"
             "display/screen/settings_screen/settings_network_tab.cc"
+            "display/screen/settings_screen/settings_network_sim.cc"
             "display/screen/network_screen/network_screen.cc"
+            "display/screen/network_screen/network_list.cc"
+            "display/screen/network_screen/network_wifi.cc"
+            "display/screen/network_screen/network_keyboard.cc"
             "display/screen/settings_screen/settings_theme_tab.cc"
             "display/screen/settings_screen/settings_language_tab.cc"
             "display/screen/settings_screen/settings_haptic_tab.cc"
@@ -85,14 +149,19 @@ set(SOURCES "audio/audio_codec.cc"
             "display/screen/settings_screen/settings_test/settings_test_common.cc"
             "display/screen/settings_screen/settings_test/settings_test_sensors.cc"
             "display/screen/settings_screen/settings_test/settings_test_wifi.cc"
+            "display/screen/settings_screen/settings_test/settings_test_wifi_scan.cc"
             "display/screen/settings_screen/settings_test/settings_test_audio.cc"
             "display/screen/settings_screen/settings_test/settings_test_cell.cc"
+            "display/screen/settings_screen/settings_test/settings_test_cell_at.cc"
             "display/screen/settings_screen/settings_test/settings_test_camera.cc"
             "display/screen/settings_screen/settings_test/settings_test_touch_screen.cc"
             "display/screen/settings_screen/settings_test/settings_test_battery_screen.cc"
             "display/screen/settings_screen/settings_test/settings_test_aging_screen.cc"
+            "display/screen/settings_screen/settings_log_tab.cc"
+            "display/screen/settings_screen/settings_log_upload.cc"
             "display/screen/settings_screen/settings_about_tab.cc"
             "display/screen/bluetooth_screen/bluetooth_screen.cc"
+            "display/screen/bluetooth_screen/bluetooth_uart.cc"
             "display/screen/touch_missing_screen/touch_missing_screen.cc"
             "display/lvgl_display/lvgl_display.cc"
             "display/emote_display.cc"
@@ -123,19 +192,21 @@ set(SOURCES "audio/audio_codec.cc"
 
 set(INCLUDE_DIRS "." "display" "display/LUT" "display/a2ui" "display/font" "display/screen" "display/screen/settings_screen" "display/screen/settings_screen/settings_test" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "protocols" "reader")
 
-# Add board common files（GLOB 缓存：新增 boards/common/*.cc 后需 idf.py reconfigure）
-file(GLOB BOARD_COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc)
+# boards/common：板根 + 一层子目录（board/power/bus/…）；更深不收（power_policy 已是一层）
+file(GLOB BOARD_COMMON_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*/*.cc
+)
 list(APPEND SOURCES ${BOARD_COMMON_SOURCES})
-# 显式纳入，避免仅依赖 GLOB 缓存漏编
-list(APPEND SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/uvc_still_camera.cc)
 list(REMOVE_DUPLICATES SOURCES)
 list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/boards/common)
-list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/power_policy)
-list(APPEND SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/power_policy/power_policy.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/power_policy/power_policy_standby_lp.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/power_policy/power_hw.cc
-)
+file(GLOB _COMMON_SUBDIRS LIST_DIRECTORIES true
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*)
+foreach(_common_subdir ${_COMMON_SUBDIRS})
+    if(IS_DIRECTORY ${_common_subdir})
+        list(APPEND INCLUDE_DIRS ${_common_subdir})
+    endif()
+endforeach()
 
 idf_build_get_property(build_components BUILD_COMPONENTS)
 # Function to find component dynamically by pattern
@@ -161,12 +232,22 @@ if(CONFIG_BOARD_TYPE_METALIO_E_INK_4)
     set(BUILTIN_ICON_FONT font_awesome_14_1)
 endif()
 
+# 板根 + 一层子目录（如 metalio-e-ink-4/{bus,display,input,periph}）；更深不收
 file(GLOB BOARD_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*/*.c
 )
 list(APPEND SOURCES ${BOARD_SOURCES})
 list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE})
+file(GLOB _BOARD_SUBDIRS LIST_DIRECTORIES true
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*)
+foreach(_board_subdir ${_BOARD_SUBDIRS})
+    if(IS_DIRECTORY ${_board_subdir})
+        list(APPEND INCLUDE_DIRS ${_board_subdir})
+    endif()
+endforeach()
 
 # Select audio processor according to Kconfig
 if(CONFIG_USE_AUDIO_PROCESSOR)
@@ -260,39 +341,14 @@ elseif(CONFIG_LANGUAGE_SR_RS)
     set(LANG_DIR "sr-RS")
 endif()
 
-# Define generation path（UI 字表固定嵌入 zh-CN+en-US；音效仍跟 LANG_DIR）
+# Define generation path（UI 字表固定嵌入 zh-CN+en-US）
 set(LANG_JSON_ZH "${CMAKE_CURRENT_SOURCE_DIR}/assets/locales/zh-CN/language.json")
 set(LANG_JSON_EN "${CMAKE_CURRENT_SOURCE_DIR}/assets/locales/en-US/language.json")
 set(LANG_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/assets/lang_config.h")
 set(LANG_TABLES_CC "${CMAKE_CURRENT_SOURCE_DIR}/assets/lang_tables.cc")
 list(APPEND SOURCES "assets/lang_tables.cc")
 
-# Collect current language audio files
-file(GLOB LANG_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/locales/${LANG_DIR}/*.ogg)
-
-# If not en-US, collect en-US audio files as fallback for missing files
-if(NOT LANG_DIR STREQUAL "en-US")
-    file(GLOB EN_US_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/locales/en-US/*.ogg)
-    
-    # Extract filenames (without path) from current language
-    set(EXISTING_NAMES "")
-    foreach(SOUND_FILE ${LANG_SOUNDS})
-        get_filename_component(FILENAME ${SOUND_FILE} NAME)
-        list(APPEND EXISTING_NAMES ${FILENAME})
-    endforeach()
-    
-    # Only add en-US audio files that are missing in current language
-    foreach(EN_SOUND ${EN_US_SOUNDS})
-        get_filename_component(FILENAME ${EN_SOUND} NAME)
-        if(NOT ${FILENAME} IN_LIST EXISTING_NAMES)
-            list(APPEND LANG_SOUNDS ${EN_SOUND})
-            message(STATUS "Using en-US fallback for missing audio: ${FILENAME}")
-        endif()
-    endforeach()
-endif()
-
-file(GLOB COMMON_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/common/*.ogg)
-# 产测/老化等：与 Lang 音效同路径 EMBED，符号为 _binary_<basename>_ogg_{start,end}
+# 仅嵌入老化/产测厂测音效；通用 Lang::Sounds OGG 已下线
 file(GLOB FACTORY_TEST_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/factory-test-assets/*.ogg)
 if(FACTORY_TEST_SOUNDS)
     list(LENGTH FACTORY_TEST_SOUNDS _factory_test_sound_count)
@@ -309,23 +365,39 @@ if(CONFIG_IDF_TARGET_ESP32)
     list(REMOVE_ITEM SOURCES "audio/codecs/box_audio_codec.cc"
                              "audio/codecs/es8388_audio_codec.cc"
                              "audio/codecs/es8389_audio_codec.cc"
-                             "led/gpio_led.cc"
-                             "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/esp32_camera.cc"
+                             "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/camera/esp32_camera.cc"
                              "display/lvgl_display/jpg/image_to_jpeg.cpp"
                              "display/lvgl_display/jpg/jpeg_to_image.c"
                              )
 endif()
 
 idf_component_register(SRCS ${SOURCES}
-                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS} ${FACTORY_TEST_SOUNDS}
+                    EMBED_FILES ${FACTORY_TEST_SOUNDS}
                                 ${ASSISTANT_HINT_EN_A2I1}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
                     )
 
-# xtensa-g++ ICE（cfgcleanup try_forward_edges）：book_screen.cc 过大时 -O2 偶发，降到 -O1
+# xtensa-g++ ICE：阅读页相关大 TU 在 -O2 偶发，降到 -O1
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/book_screen.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_page_image.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/cover/book_cover_workers.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_open_worker.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_layout_debounce.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_layout_worker.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_toc_footer.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_reader_body.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/shelf/book_detail.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/shelf/book_home.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/reader/book_reader_overlay.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_settings_sheet.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_settings_font_ui.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_settings_opts_ui.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_font_multi.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_ttf_panel.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_ttf_actions.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/book_screen/settings/book_tap_ui.cc"
     PROPERTIES COMPILE_OPTIONS "-O1"
 )
 
@@ -342,10 +414,27 @@ if(TARGET idf::espressif__usb_host_uvc)
     target_link_libraries(${COMPONENT_LIB} PRIVATE idf::espressif__usb_host_uvc idf::usb)
 endif()
 
-# I1 字形变细：lv_draw_sw_blend_to_i1.c 需要找到 main/display/epd_i1_glyph_thin.h
+# I1 字形落墨：打补丁 + 让 lvgl 能 include epd_i1_glyph_thin.h
+# managed_components 重拉后补丁会丢；每次构建幂等执行 apply_patch.py
+set(EPD_I1_BLEND_PATCH_PY "${PROJECT_DIR}/lv_draw_sw_blend_to_i1/apply_patch.py")
+set(EPD_I1_BLEND_SRC
+    "${PROJECT_DIR}/managed_components/lvgl__lvgl/src/draw/sw/blend/lv_draw_sw_blend_to_i1.c")
+set(EPD_I1_GLYPH_H "${CMAKE_CURRENT_LIST_DIR}/display/epd_i1_glyph_thin.h")
+add_custom_target(epd_i1_blend_patch
+    COMMAND python "${EPD_I1_BLEND_PATCH_PY}"
+    WORKING_DIRECTORY "${PROJECT_DIR}"
+    COMMENT "Patch LVGL I1 glyph blend (EPD gray4/BW)"
+    VERBATIM
+)
 idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
 if(TARGET ${lvgl_lib})
     target_include_directories(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/display")
+    add_dependencies(${lvgl_lib} epd_i1_blend_patch)
+    if(EXISTS "${EPD_I1_BLEND_SRC}")
+        set_source_files_properties("${EPD_I1_BLEND_SRC}"
+            TARGET_DIRECTORY ${lvgl_lib}
+            PROPERTIES OBJECT_DEPENDS "${EPD_I1_GLYPH_H};${EPD_I1_BLEND_PATCH_PY}")
+    endif()
 endif()
 
 # Use target_compile_definitions to define BOARD_TYPE, BOARD_NAME
@@ -369,7 +458,7 @@ add_custom_command(
         ${LANG_JSON_ZH}
         ${LANG_JSON_EN}
         ${PROJECT_DIR}/scripts/gen_lang.py
-    COMMENT "Generating runtime zh-CN/en-US language tables (sounds: ${LANG_DIR})"
+    COMMENT "Generating runtime zh-CN/en-US language tables"
 )
 
 # Force build generation dependencies

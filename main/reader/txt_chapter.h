@@ -24,4 +24,18 @@ inline bool IsTxtChapterTitleLine(const std::string& s) {
     return IsTxtChapterTitleLine(s.data(), s.size());
 }
 
+/**
+ * @brief 拆成「第N章」与后随章节名；无「第N章/卷N」前缀则失败
+ * @param title 顶格章名原文
+ * @param ordinal 输出序数行（如「第18章」）
+ * @param name 输出章节名，可为空（空则不显示第二行）
+ * @return 是否识别到序数前缀
+ */
+bool SplitChapterHeading(const std::string& title, std::string& ordinal, std::string& name);
+
+/**
+ * @brief 正文展示：序数单独一行，有章节名则换行紧跟；无法拆分则原样
+ */
+std::string FormatChapterHeadingDisplay(const std::string& title);
+
 }  // namespace reader

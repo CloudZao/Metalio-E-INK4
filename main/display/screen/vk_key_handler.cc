@@ -8,23 +8,23 @@
 #include <esp_timer.h>
 #include <lvgl.h>
 
+#include "battery_uv_lockout.h"
 #include "ota_upgrade_screen/ota_upgrade_screen.h"
 #include "ota_confirm_dialog/ota_confirm_dialog.h"
 #include "screen_common.h"
 #include "standby_screen/standby_screen.h"
 
-namespace {
 
-constexpr const char* TAG = "VkKey";
-constexpr const char* kNoneScreen = "none";
-constexpr const char* kHomeScreen = "home";
-constexpr int kMaxStack = 8;
-constexpr int kMaxRegistry = 24;
+static constexpr const char* TAG = "VkKey";
+static constexpr const char* kNoneScreen = "none";
+static constexpr const char* kHomeScreen = "home";
+static constexpr int kMaxStack = 8;
+static constexpr int kMaxRegistry = 24;
 
-const char* s_stack[kMaxStack] = {};
-int s_depth = 0;
+static const char* s_stack[kMaxStack] = {};
+static int s_depth = 0;
 
-struct RegistryEntry {
+struct VkKeyRegistryEntry {
     const char* name = nullptr;
     ScreenFactory factory = nullptr;
     VkKeyHandler on_key = nullptr;
@@ -37,10 +37,10 @@ struct RegistryEntry {
     BootKeyAction on_boot_double_click = nullptr;
 };
 
-RegistryEntry s_registry[kMaxRegistry] = {};
-int s_registry_count = 0;
+static VkKeyRegistryEntry s_registry[kMaxRegistry] = {};
+static int s_registry_count = 0;
 
-void StackPush(const char* name) {
+static void StackPush(const char* name) {
     if (name == nullptr || name[0] == '\0') {
         return;
     }
@@ -52,7 +52,7 @@ void StackPush(const char* name) {
     }
 }
 
-void StackRemoveTopmost(const char* name) {
+static void StackRemoveTopmost(const char* name) {
     if (name == nullptr || s_depth <= 0) {
         return;
     }
@@ -68,11 +68,11 @@ void StackRemoveTopmost(const char* name) {
     }
 }
 
-const char* StackTop() {
+static const char* StackTop() {
     return s_depth > 0 ? s_stack[s_depth - 1] : kNoneScreen;
 }
 
-RegistryEntry* FindRegistry(const char* name) {
+VkKeyRegistryEntry* FindRegistry(const char* name) {
     if (name == nullptr) {
         return nullptr;
     }
@@ -84,7 +84,7 @@ RegistryEntry* FindRegistry(const char* name) {
     return nullptr;
 }
 
-void UpsertRegistry(const char* name, const VkKeyScreenDesc& desc) {
+static void UpsertRegistry(const char* name, const VkKeyScreenDesc& desc) {
     if (name == nullptr) {
         return;
     }
@@ -104,7 +104,7 @@ void UpsertRegistry(const char* name, const VkKeyScreenDesc& desc) {
         ESP_LOGW(TAG, "registry full, drop %s", name);
         return;
     }
-    s_registry[s_registry_count++] = RegistryEntry{
+    s_registry[s_registry_count++] = VkKeyRegistryEntry{
         name,
         desc.factory,
         desc.on_key,
@@ -117,7 +117,7 @@ void UpsertRegistry(const char* name, const VkKeyScreenDesc& desc) {
         desc.on_boot_double_click};
 }
 
-void OnScreenLifecycleEvent(lv_event_t* e) {
+static void OnScreenLifecycleEvent(lv_event_t* e) {
     const char* name = static_cast<const char*>(lv_event_get_user_data(e));
     const lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_SCREEN_LOADED) {
@@ -127,10 +127,10 @@ void OnScreenLifecycleEvent(lv_event_t* e) {
     }
 }
 
-void DispatchDefault(const char* key_name, const char* screen) {
+static void DispatchDefault(const char* key_name, const char* screen) {
     if (std::strcmp(key_name, "vk_home") == 0) {
         if (std::strcmp(screen, kHomeScreen) == 0) {
-            ESP_LOGI(TAG, "vk_home no-op (already home)");
+            ESP_LOGD(TAG, "vk_home no-op (already home)");
             return;
         }
         ScreenRequestHome();
@@ -139,10 +139,10 @@ void DispatchDefault(const char* key_name, const char* screen) {
 
     if (std::strcmp(key_name, "vk_prev") == 0) {
         if (std::strcmp(screen, kHomeScreen) == 0) {
-            ESP_LOGI(TAG, "vk_prev no-op (already home)");
+            ESP_LOGD(TAG, "vk_prev no-op (already home)");
             return;
         }
-        ESP_LOGI(TAG, "vk_prev -> navigate back");
+        ESP_LOGD(TAG, "vk_prev -> navigate back");
         ScreenNavigateBack();
         return;
     }
@@ -155,7 +155,6 @@ void DispatchDefault(const char* key_name, const char* screen) {
     ESP_LOGW(TAG, "unknown key %s", key_name);
 }
 
-}  // namespace
 
 void VkKey_OnScreenLifecycle(const char* name, vk_screen_lifecycle_t event) {
     if (name == nullptr || name[0] == '\0') {
@@ -244,27 +243,30 @@ void VkKey_Dispatch(const char* key_name) {
     if (key_name == nullptr) {
         return;
     }
+    if (BatteryUvLockout_IsActive()) {
+        return;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "%s blocked (ota upgrade active)", key_name);
+        ESP_LOGD(TAG, "%s blocked (ota upgrade active)", key_name);
         return;
     }
     if (StandbyScreen::IsActive()) {
-        ESP_LOGI(TAG, "%s blocked (standby overlay active)", key_name);
+        ESP_LOGD(TAG, "%s blocked (standby overlay active)", key_name);
         return;
     }
 
     const char* screen = StackTop();
     const int64_t t0 = esp_timer_get_time();
-    ESP_LOGI(TAG, "%s on screen=%s (depth=%d) begin", key_name, screen, s_depth);
+    ESP_LOGD(TAG, "%s on screen=%s (depth=%d) begin", key_name, screen, s_depth);
 
     if (auto* e = FindRegistry(screen)) {
         if (e->on_key != nullptr) {
             const bool consumed = e->on_key(key_name);
             const int us = static_cast<int>(esp_timer_get_time() - t0);
-            ESP_LOGI(TAG, "%s handler %s in %d us (screen=%s)", key_name,
+            ESP_LOGD(TAG, "%s handler %s in %d us (screen=%s)", key_name,
                      consumed ? "consumed" : "fallthrough", us, screen);
             if (us > 20000) {
-                ESP_LOGW(TAG, "%s handler slow %d us — likely sync LVGL on touch_feed", key_name,
+                ESP_LOGW(TAG, "%s handler slow %d us � likely sync LVGL on touch_feed", key_name,
                          us);
             }
             if (consumed) {
@@ -274,7 +276,7 @@ void VkKey_Dispatch(const char* key_name) {
     }
 
     DispatchDefault(key_name, screen);
-    ESP_LOGI(TAG, "%s default done in %d us", key_name,
+    ESP_LOGD(TAG, "%s default done in %d us", key_name,
              static_cast<int>(esp_timer_get_time() - t0));
 }
 
@@ -282,39 +284,45 @@ bool VkKey_OnLongPress(const char* key_name) {
     if (key_name == nullptr) {
         return false;
     }
+    if (BatteryUvLockout_IsActive()) {
+        return true;
+    }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
-        ESP_LOGI(TAG, "%s long-press blocked (ota upgrade active)", key_name);
-        return true;  // 已消费，避免下层误处理
+        ESP_LOGD(TAG, "%s long-press blocked (ota upgrade active)", key_name);
+        return true;  // ???????????
     }
     if (StandbyScreen::IsActive()) {
-        ESP_LOGI(TAG, "%s long-press blocked (standby overlay active)", key_name);
+        ESP_LOGD(TAG, "%s long-press blocked (standby overlay active)", key_name);
         return false;
     }
     const char* screen = StackTop();
-    ESP_LOGI(TAG, "%s long-press on screen=%s", key_name, screen);
+    ESP_LOGD(TAG, "%s long-press on screen=%s", key_name, screen);
     if (auto* e = FindRegistry(screen)) {
         if (e->on_key_long_press != nullptr && e->on_key_long_press(key_name)) {
-            ESP_LOGI(TAG, "%s long-press handled by screen=%s", key_name, screen);
+            ESP_LOGD(TAG, "%s long-press handled by screen=%s", key_name, screen);
             return true;
         }
     }
-    // 默认：长按 vk_home 一键回系统首页（页未消费时；OTA 已拦截）
+    // ????? vk_home ??????????????OTA ????
     if (std::strcmp(key_name, "vk_home") == 0) {
         if (std::strcmp(screen, kHomeScreen) == 0) {
-            ESP_LOGI(TAG, "vk_home long-press no-op (already home)");
-            return true;  // 吞松手 Click
+            ESP_LOGD(TAG, "vk_home long-press no-op (already home)");
+            return true;  // ??? Click
         }
         ESP_LOGI(TAG, "vk_home long-press -> go home");
         ScreenRequestHome();
         return true;
     }
-    ESP_LOGI(TAG, "%s long-press no-op (screen=%s)", key_name, screen);
+    ESP_LOGD(TAG, "%s long-press no-op (screen=%s)", key_name, screen);
     return false;
 }
 
 bool VkKey_OnPressUp(const char* key_name) {
     if (key_name == nullptr) {
         return false;
+    }
+    if (BatteryUvLockout_IsActive()) {
+        return true;
     }
     if (OtaUpgradeScreen::IsActive() || OtaConfirmDialog::IsActive()) {
         return true;
@@ -326,7 +334,7 @@ bool VkKey_OnPressUp(const char* key_name) {
     ESP_LOGD(TAG, "%s press-up on screen=%s", key_name, screen);
     if (auto* e = FindRegistry(screen)) {
         if (e->on_key_press_up != nullptr && e->on_key_press_up(key_name)) {
-            ESP_LOGI(TAG, "%s press-up handled by screen=%s", key_name, screen);
+            ESP_LOGD(TAG, "%s press-up handled by screen=%s", key_name, screen);
             return true;
         }
     }

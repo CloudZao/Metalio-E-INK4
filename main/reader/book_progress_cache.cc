@@ -35,7 +35,7 @@ void Invalidate() {
     s_map.clear();
     s_ready = false;
     ++s_generation;
-    ESP_LOGI(TAG, "invalidated");
+    ESP_LOGD(TAG, "invalidated");
 }
 
 void ReplaceAll(std::vector<std::pair<std::string, BookSession::ProgressPeek>> items) {
@@ -50,7 +50,7 @@ void ReplaceAll(std::vector<std::pair<std::string, BookSession::ProgressPeek>> i
     }
     s_ready = true;
     ++s_generation;
-    ESP_LOGI(TAG, "replaced n=%u gen=%u", static_cast<unsigned>(s_map.size()),
+    ESP_LOGD(TAG, "replaced n=%u gen=%u", static_cast<unsigned>(s_map.size()),
              static_cast<unsigned>(s_generation));
 }
 

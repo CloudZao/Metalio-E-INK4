@@ -19,25 +19,24 @@
 #include <lvgl.h>
 #include "assets/lang_config.h"
 
-namespace {
 
-constexpr const char* TAG = "OtaConfirmDlg";
-constexpr uint32_t kShowTimeoutMs = 120000;  // 等用户操作，最长 2 分钟
-constexpr size_t kVerCap = 48;
-constexpr size_t kMsgCap = 160;
-constexpr lv_coord_t kBorderW = 2;
-constexpr lv_coord_t kRadius = 8;
-constexpr lv_coord_t kBtnH = 44;
+static constexpr const char* TAG = "OtaConfirmDlg";
+static constexpr uint32_t kShowTimeoutMs = 120000;  // 等用户操作，最长 2 分钟
+static constexpr size_t kVerCap = 48;
+static constexpr size_t kMsgCap = 160;
+static constexpr lv_coord_t kBorderW = 2;
+static constexpr lv_coord_t kRadius = 8;
+static constexpr lv_coord_t kBtnH = 44;
 
-std::atomic<bool> s_input_locked{false};
-std::atomic<bool> s_ui_alive{false};
-std::atomic<uint32_t> s_gen{0};
+static std::atomic<bool> s_input_locked{false};
+static std::atomic<bool> s_ui_alive{false};
+static std::atomic<uint32_t> s_gen{0};
 
-lv_obj_t* s_root = nullptr;
+static lv_obj_t* s_root = nullptr;
 
-SemaphoreHandle_t s_choice_done = nullptr;
+static SemaphoreHandle_t s_choice_done = nullptr;
 
-struct SyncState {
+struct OtaConfirmSyncState {
     uint32_t gen = 0;
     OtaConfirmDialog::Mode mode = OtaConfirmDialog::Mode::Boot;
     OtaConfirmDialog::Choice choice = OtaConfirmDialog::Choice::RemindLater;
@@ -45,16 +44,15 @@ struct SyncState {
     char current[kVerCap] = {};
     char next[kVerCap] = {};
 };
-SyncState s_sync{};
+static OtaConfirmSyncState s_sync{};
 
-std::unique_ptr<OtaConfirmDialog::ChoiceCallback> s_async_cb;
+static std::unique_ptr<OtaConfirmDialog::ChoiceCallback> s_async_cb;
 
-const lv_font_t* UiFont() {
+static const lv_font_t* UiFont() {
     const lv_font_t* f = fontpack_lv_font_ui();
     return f != nullptr ? f : LV_FONT_DEFAULT;
 }
-
-void CopyCapped(char* dst, size_t cap, const char* src) {
+static void CopyCapped(char* dst, size_t cap, const char* src) {
     if (dst == nullptr || cap == 0) {
         return;
     }
@@ -65,14 +63,14 @@ void CopyCapped(char* dst, size_t cap, const char* src) {
     std::snprintf(dst, cap, "%s", src);
 }
 
-bool EnsureSems() {
+static bool EnsureSems() {
     if (s_choice_done == nullptr) {
         s_choice_done = xSemaphoreCreateBinary();
     }
     return s_choice_done != nullptr;
 }
 
-void DrainSem(SemaphoreHandle_t sem) {
+static void DrainSem(SemaphoreHandle_t sem) {
     if (sem == nullptr) {
         return;
     }
@@ -80,7 +78,7 @@ void DrainSem(SemaphoreHandle_t sem) {
     }
 }
 
-bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
+static bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
     if (cb == nullptr) {
         return false;
     }
@@ -100,11 +98,11 @@ bool LvAsyncCallLocked(lv_async_cb_t cb, void* user_data) {
     return ok;
 }
 
-void ClearWidgetPtrs() {
+static void ClearWidgetPtrs() {
     s_root = nullptr;
 }
 
-void TeardownUi() {
+static void TeardownUi() {
     lv_obj_t* root = s_root;
     ClearWidgetPtrs();
     s_ui_alive.store(false, std::memory_order_release);
@@ -138,35 +136,35 @@ void FinishChoice(OtaConfirmDialog::Choice choice) {
     }
 }
 
-void OnMaskClicked(lv_event_t* e) {
+static void OnMaskClicked(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
     FinishChoice(OtaConfirmDialog::Choice::RemindLater);
 }
 
-void OnUpgradeClicked(lv_event_t* e) {
+static void OnUpgradeClicked(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
     FinishChoice(OtaConfirmDialog::Choice::Upgrade);
 }
 
-void OnIgnoreClicked(lv_event_t* e) {
+static void OnIgnoreClicked(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
     FinishChoice(OtaConfirmDialog::Choice::IgnorePersist);
 }
 
-void OnRemindClicked(lv_event_t* e) {
+static void OnRemindClicked(lv_event_t* e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
         return;
     }
     FinishChoice(OtaConfirmDialog::Choice::RemindLater);
 }
 
-lv_obj_t* MakeButton(lv_obj_t* parent, const char* text, lv_event_cb_t cb, lv_coord_t width) {
+static lv_obj_t* MakeButton(lv_obj_t* parent, const char* text, lv_event_cb_t cb, lv_coord_t width) {
     lv_obj_t* btn = lv_obj_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_set_size(btn, width, kBtnH);
@@ -212,6 +210,7 @@ void BuildUi(const char* current_ver, const char* new_ver, OtaConfirmDialog::Mod
     lv_obj_move_foreground(root);
 
     const bool boot = (mode == OtaConfirmDialog::Mode::Boot);
+    const bool sd = (mode == OtaConfirmDialog::Mode::Sd);
     const lv_coord_t card_h = boot ? 320 : 240;
 
     lv_obj_t* card = lv_obj_create(root);
@@ -232,7 +231,11 @@ void BuildUi(const char* current_ver, const char* new_ver, OtaConfirmDialog::Mod
                         nullptr);
 
     char msg[kMsgCap];
-    std::snprintf(msg, sizeof(msg), Lang::Strings::OTA_CONFIRM_FMT, current_ver, new_ver);
+    if (sd) {
+        std::snprintf(msg, sizeof(msg), Lang::Strings::OTA_SD_CONFIRM_FMT, current_ver);
+    } else {
+        std::snprintf(msg, sizeof(msg), Lang::Strings::OTA_CONFIRM_FMT, current_ver, new_ver);
+    }
 
     lv_obj_t* lbl = lv_label_create(card);
     lv_label_set_text(lbl, msg);
@@ -275,10 +278,11 @@ void BuildUi(const char* current_ver, const char* new_ver, OtaConfirmDialog::Mod
 
     s_root = root;
     s_ui_alive.store(true, std::memory_order_release);
-    ESP_LOGI(TAG, "shown mode=%s cur=%s new=%s", boot ? "boot" : "about", current_ver, new_ver);
+    ESP_LOGI(TAG, "shown mode=%s cur=%s new=%s", boot ? "boot" : (sd ? "sd" : "about"),
+             current_ver, new_ver);
 }
 
-struct BuildMsg {
+struct OtaConfirmBuildMsg {
     uint32_t gen = 0;
     OtaConfirmDialog::Mode mode = OtaConfirmDialog::Mode::Boot;
     char current[kVerCap] = {};
@@ -286,8 +290,8 @@ struct BuildMsg {
     bool signal_choice_sem = false;
 };
 
-void AsyncBuild(void* p) {
-    auto* msg = static_cast<BuildMsg*>(p);
+static void AsyncBuild(void* p) {
+    auto* msg = static_cast<OtaConfirmBuildMsg*>(p);
     if (msg == nullptr) {
         return;
     }
@@ -344,7 +348,7 @@ bool BeginShow(const char* current_version, const char* new_version, OtaConfirmD
         return true;
     }
 
-    auto* msg = new (std::nothrow) BuildMsg{};
+    auto* msg = new (std::nothrow) OtaConfirmBuildMsg{};
     if (msg == nullptr) {
         s_input_locked.store(false, std::memory_order_release);
         return false;
@@ -363,7 +367,6 @@ bool BeginShow(const char* current_version, const char* new_version, OtaConfirmD
     return true;
 }
 
-}  // namespace
 
 OtaConfirmDialog::Choice OtaConfirmDialog::ShowBlocking(const char* current_version,
                                                         const char* new_version, Mode mode) {

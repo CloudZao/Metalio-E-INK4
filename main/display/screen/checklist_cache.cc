@@ -5,15 +5,13 @@
 
 #include <esp_heap_caps.h>
 
-namespace {
+static std::mutex s_mu;
+static checklist_cache_item_t* s_items = nullptr; // SPIRAM
+static size_t s_count = 0;
+static bool s_ready = false;
+static bool s_writing = false;
 
-std::mutex s_mu;
-checklist_cache_item_t* s_items = nullptr; // SPIRAM
-size_t s_count = 0;
-bool s_ready = false;
-bool s_writing = false;
-
-bool EnsureStorageLocked()
+static bool EnsureStorageLocked()
 {
     if (s_items != nullptr) {
         return true;
@@ -28,8 +26,6 @@ bool EnsureStorageLocked()
     }
     return s_items != nullptr;
 }
-
-}  // namespace
 
 void checklist_cache_begin(void)
 {

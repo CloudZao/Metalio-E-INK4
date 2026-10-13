@@ -8,21 +8,19 @@
 
 #include "power_policy.h"
 
-namespace {
-
-constexpr const char* TAG = "VkPageRepeat";
-constexpr int kPagesPerSec = 10;
+static constexpr const char* TAG = "VkPageRepeat";
+static constexpr int kPagesPerSec = 10;
 /** 轮询步长：对齐「满整秒」即可，不必 1Hz */
-constexpr uint64_t kPollIntervalUs = 100000;
-constexpr uint64_t kStepIntervalUs = 1000000;
+static constexpr uint64_t kPollIntervalUs = 100000;
+static constexpr uint64_t kStepIntervalUs = 1000000;
 
-std::atomic<int> s_dir{0}; // -1 / +1
-std::atomic<VkPageRepeatStepFn> s_step{nullptr};
-std::atomic<int64_t> s_press_anchor_us{0}; // 手指按下时刻（TryStart 时刻回推门槛）
-std::atomic<int> s_applied_steps{0};      // 已应用的「整秒」档位数
-esp_timer_handle_t s_timer = nullptr;
+static std::atomic<int> s_dir{0}; // -1 / +1
+static std::atomic<VkPageRepeatStepFn> s_step{nullptr};
+static std::atomic<int64_t> s_press_anchor_us{0}; // 手指按下时刻（TryStart 时刻回推门槛）
+static std::atomic<int> s_applied_steps{0};      // 已应用的「整秒」档位数
+static esp_timer_handle_t s_timer = nullptr;
 
-void StopLocked() {
+static void StopLocked() {
     s_dir.store(0, std::memory_order_release);
     s_step.store(nullptr, std::memory_order_release);
     s_press_anchor_us.store(0, std::memory_order_release);
@@ -32,7 +30,7 @@ void StopLocked() {
     }
 }
 
-void PollOnce() {
+static void PollOnce() {
     const int dir = s_dir.load(std::memory_order_acquire);
     VkPageRepeatStepFn step = s_step.load(std::memory_order_acquire);
     const int64_t anchor = s_press_anchor_us.load(std::memory_order_acquire);
@@ -55,11 +53,11 @@ void PollOnce() {
     }
 }
 
-void TimerCb(void* /*arg*/) {
+static void TimerCb(void* /*arg*/) {
     PollOnce();
 }
 
-bool EnsureTimer() {
+static bool EnsureTimer() {
     if (s_timer != nullptr) {
         return true;
     }
@@ -77,8 +75,6 @@ bool EnsureTimer() {
     }
     return true;
 }
-
-}  // namespace
 
 extern "C" void VkPageRepeatStop(void) {
     StopLocked();

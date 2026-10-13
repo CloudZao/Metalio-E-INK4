@@ -5,7 +5,13 @@ extern "C" {
 #endif
 
 extern const char cloudzao_host[]; // 业务 API 基址
+extern const char cloudzao_log_upload_host[]; // 管理端 API 基址（设备日志上传等）
 extern const char cloudzao_ota_url[]; // OTA 检查地址 
+extern const char xiaozhi_ota_url[]; // 小智 OTA 检查地址
+extern const char yunxin_ota_url[]; // 云信 OTA 检查地址
+extern const char yunxin_websocket_url[]; // 云信 WebSocket 基址
+extern const char yunxin_app_key[]; // 云信应用标识
+extern const char yunxin_token[]; // 云信 WebSocket Token
 extern const char cloudzao_book_tools_url[]; // 书籍/字体转换工具页
 extern const char cloudzao_path_sinicloud_token[]; // 同传 Token
 extern const char cloudzao_path_asr_transcribe[]; // ASR 转写上传
@@ -20,6 +26,7 @@ extern const char cloudzao_path_push_resources[]; // 推送队列删除
 extern const char cloudzao_path_library_sync[]; // 书库同步
 extern const char cloudzao_path_device_location_wifi[]; // WiFi 定位上报
 extern const char cloudzao_path_vision_upload[];// 视觉上传
+extern const char cloudzao_path_device_logs[]; // 设备运行日志上传
 
 #ifdef __cplusplus
 }

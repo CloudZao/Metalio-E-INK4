@@ -14,7 +14,8 @@
  */
 class SettingsTestAgingScreen {
 public:
+    /** @brief 创建老化测试页 */
     static lv_obj_t* Create();
-    /** 老化页占用中（含进页后、退页 TearDown 前） */
-    static bool IsActive();
+    /** @brief 是否处于激活/门禁状态 */
+    static bool IsActive();  // 老化页占用中（含进页后、退页 TearDown 前）
 };

@@ -234,7 +234,7 @@ bool DecodeJpegStream(ZipReader& zip, int max_w, int max_h, RasterImage& out,
     }
     ctx.out = &out;
 
-    ESP_LOGI(TAG, "decode=stream jpeg %dx%d scale=1/%d -> %dx%d", ctx.src_w, ctx.src_h, 1 << scale,
+    ESP_LOGD(TAG, "decode=stream jpeg %dx%d scale=1/%d -> %dx%d", ctx.src_w, ctx.src_h, 1 << scale,
              ctx.out_w, ctx.out_h);
     jr = jd_decomp(&jdec, JpegOutFunc, static_cast<BYTE>(scale));
     heap_caps_free(pool);
@@ -527,7 +527,7 @@ bool DecodePngStream(ZipReader& zip, int max_w, int max_h, RasterImage& out,
                 break;
             }
             got_ihdr = true;
-            ESP_LOGI(TAG, "decode=stream png %ux%u type=%u -> %dx%d", static_cast<unsigned>(s.width),
+            ESP_LOGD(TAG, "decode=stream png %ux%u type=%u -> %dx%d", static_cast<unsigned>(s.width),
                      static_cast<unsigned>(s.height), s.color_type, dst_w, dst_h);
         } else if (std::strcmp(type, "IDAT") == 0) {
             if (!got_ihdr) {
@@ -634,7 +634,7 @@ bool DecodeZipEntryImageToL8(ZipReader& zip, const char* entry_name, int max_w, 
     }
 
     if (AbortRequested(abort)) {
-        ESP_LOGI(TAG, "decode=stream abort entry=%s", entry_name);
+        ESP_LOGD(TAG, "decode=stream abort entry=%s", entry_name);
         ok = false;
         out.Reset();
     } else if (zip.EntryStreamError()) {
@@ -644,7 +644,7 @@ bool DecodeZipEntryImageToL8(ZipReader& zip, const char* entry_name, int max_w, 
     }
     zip.CloseEntryStream();
     if (ok) {
-        ESP_LOGI(TAG, "decode=stream ok entry=%s out=%ux%u", entry_name, out.width, out.height);
+        ESP_LOGD(TAG, "decode=stream ok entry=%s out=%ux%u", entry_name, out.width, out.height);
     }
     return ok;
 }

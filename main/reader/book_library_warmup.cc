@@ -95,7 +95,7 @@ void PeekAllIntoCache(const std::vector<BookInfo>& books) {
     s_cache_ready.store(true, std::memory_order_release);
     book_home_snapshot::StoreAggregateStats(total_seconds, finished_count);
 
-    ESP_LOGI(TAG, "peek done cached=%u agg_sec=%u finished=%d",
+    ESP_LOGD(TAG, "peek done cached=%u agg_sec=%u finished=%d",
              static_cast<unsigned>(book_progress_cache::Size()),
              static_cast<unsigned>(total_seconds), finished_count);
 }
@@ -120,7 +120,7 @@ void WorkerTask(void* /*arg*/) {
                 s_cache_ready.store(true, std::memory_order_release);
             } else {
                 OfferBookLibraryCache(books);
-                ESP_LOGI(TAG, "开机书库预热: 扫盘完成 n=%u, 开始 Peek 进度/时长",
+                ESP_LOGD(TAG, "开机书库预热: 扫盘完成 n=%u, 开始 Peek 进度/时长",
                          static_cast<unsigned>(books.size()));
                 PeekAllIntoCache(books);
                 books.clear();

@@ -8,62 +8,72 @@
 #include "application.h"
 #include "assistant_screen/assistant_screen.h"
 #include "book_screen/book_screen.h"
+#include "bq27220_gauge.h"
+#include "display_orient.h"
 #include "lv_adapter_display.h"
 #include "power_policy.h"
 #include "task_screen/task_screen.h"
+#include "settings_screen/settings_screen.h"
+#include "settings_screen/settings_test/settings_test_battery_screen.h"
 #include "vk_key_handler.h"
 
 #include <esp_log.h>
 #include <lvgl.h>
 
-namespace {
 
-constexpr const char* TAG = "StandbyScreen";
-constexpr const char* kScreenId = "standby";
+static constexpr const char* TAG = "StandbyScreen";
+static constexpr const char* kScreenId = "standby";
 
-enum class Variant : uint8_t { None = 0, Classic = 1, Wallpaper = 2 };
+enum class StandbyVariant : uint8_t { None = 0, Classic = 1, Wallpaper = 2 };
 
-bool s_host_alive = false;
-bool s_as_overlay = false;
-lv_obj_t* s_overlay_root = nullptr;
-lv_obj_t* s_underlying_scr = nullptr;
-Variant s_variant = Variant::None;
+static bool s_host_alive = false;
+static bool s_as_overlay = false;
+static lv_obj_t* s_overlay_root = nullptr;
+static lv_obj_t* s_underlying_scr = nullptr;
+static StandbyVariant s_variant = StandbyVariant::None;
 
-void ClearStatusBindings() {
+static void EnsureStandbyPortrait() {
+    if (DisplayUiSetOrient(kDisplayUiPortrait)) {
+        if (auto* disp = LVAdapterDisplay::Instance()) {
+            disp->RequestNextFullRefresh();
+        }
+    }
+}
+
+static void ClearStatusBindings() {
     if (auto* disp = LVAdapterDisplay::Instance()) {
         disp->BindStatusWidgets(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     }
 }
 
-/** 入口判定：缓存有可用待机壁纸文件名则壁纸页，否则经典页。永不在此读 NVS。 */
-bool PreferWallpaperVariant() {
-    return !wallpaper::GetStandbyFilename().empty();
+static bool PreferWallpaperVariant() {
+    return !Wallpaper_GetStandbyFilename().empty();
 }
 
-void TeardownVariant() {
-    if (s_variant == Variant::Classic) {
-        standby_classic::Teardown();
-    } else if (s_variant == Variant::Wallpaper) {
-        standby_wallpaper::Teardown();
+static void TeardownVariant() {
+    if (s_variant == StandbyVariant::Classic) {
+        StandbyClassic_Teardown();
+    } else if (s_variant == StandbyVariant::Wallpaper) {
+        StandbyWallpaper_Teardown();
     }
-    s_variant = Variant::None;
+    s_variant = StandbyVariant::None;
 }
 
-void MountVariant(lv_obj_t* root, bool as_overlay) {
+static void MountVariant(lv_obj_t* root, bool as_overlay) {
     if (PreferWallpaperVariant()) {
-        s_variant = Variant::Wallpaper;
-        ESP_LOGI(TAG, "variant=wallpaper");
-        standby_wallpaper::Build(root);
-        standby_wallpaper::StartLoad();
+        s_variant = StandbyVariant::Wallpaper;
+        ESP_LOGD(TAG, "variant=wallpaper");
+        StandbyWallpaper_Build(root);
+        StandbyWallpaper_StartLoad();
     } else {
-        s_variant = Variant::Classic;
-        ESP_LOGI(TAG, "variant=classic");
-        standby_classic::Build(root, as_overlay);
-        standby_classic::StartRuntime();
+        s_variant = StandbyVariant::Classic;
+        ESP_LOGD(TAG, "variant=classic");
+        StandbyClassic_Build(root, as_overlay);
+        StandbyClassic_StartRuntime();
     }
 }
 
-void TeardownHostState() {
+static void TeardownHostState() {
     TeardownVariant();
     s_host_alive = false;
     s_as_overlay = false;
@@ -71,43 +81,44 @@ void TeardownHostState() {
     s_underlying_scr = nullptr;
 }
 
-void OnOverlayDeleted(lv_event_t* /*e*/) {
+static void OnOverlayDeleted(lv_event_t* /*e*/) {
     if (!s_host_alive) {
         return;
     }
     TeardownHostState();
 }
 
-void OnScreenUnloaded(lv_event_t* /*e*/) {
+static void OnScreenUnloaded(lv_event_t* /*e*/) {
     if (s_as_overlay) {
         return;
     }
     TeardownHostState();
 }
 
-bool StandbyOnVkKey(const char* /*key_name*/) {
+static bool StandbyOnVkKey(const char* /*key_name*/) {
     return true;
 }
 
-void DismissThenAssistantAsync(void* /*arg*/) {
+static void DismissThenAssistantAsync(void* /*arg*/) {
     StandbyScreen::Dismiss();
     AssistantScreen::RequestOpen();
 }
 
-bool OnBootClick() {
-    ESP_LOGI(TAG, "boot short -> ignore (stay standby)");
+static bool OnBootClick() {
+    ESP_LOGD(TAG, "boot short -> ignore (stay standby)");
     return true;
 }
 
-bool OnBootLongPress() {
+static bool OnBootLongPress() {
     ESP_LOGI(TAG, "boot long -> assistant (hold-through PTT if still pressed)");
     AssistantScreen::RequestOpen();
     return true;
 }
 
-}  // namespace
 
 lv_obj_t* StandbyScreen::Create() {
+    ESP_LOGD(TAG, "launch StandbyScreen");
+    EnsureStandbyPortrait();
     lv_obj_t* scr = lv_obj_create(nullptr);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_CLICKABLE);
     ClearStatusBindings();
@@ -131,6 +142,7 @@ void StandbyScreen::Show() {
         return;
     }
     ESP_LOGI(TAG, "show overlay on screen=%p", static_cast<void*>(under));
+    EnsureStandbyPortrait();
 
     lv_obj_t* overlay = lv_obj_create(under);
     lv_obj_remove_style_all(overlay);
@@ -153,6 +165,11 @@ void StandbyScreen::Show() {
     }
 
     BookScreen::OnEnterStandby();
+    SettingsScreen_OnEnterStandby();
+    SettingsTestBatteryScreen_PauseForStandby();
+    if (auto* disp = LVAdapterDisplay::Instance()) {
+        disp->PauseStandbyBackgroundWork();
+    }
     PowerPolicy::GetInstance().RequestReevaluate();
 }
 
@@ -164,8 +181,8 @@ void StandbyScreen::Dismiss() {
     ESP_LOGI(TAG, "dismiss overlay (under=%p variant=%u)", static_cast<void*>(s_underlying_scr),
              static_cast<unsigned>(s_variant));
 
-    if (s_variant == Variant::Classic) {
-        standby_classic::StopRuntime();
+    if (s_variant == StandbyVariant::Classic) {
+        StandbyClassic_StopRuntime();
     }
 
     lv_obj_t* overlay = s_overlay_root;
@@ -185,10 +202,22 @@ void StandbyScreen::Dismiss() {
     s_underlying_scr = nullptr;
 
     PowerPolicy::GetInstance().OnStandbyOverlayDismissed();
+
+    // 待机浅睡期间主循环停，电量单向步进冻在进待机前读数；退出时重锚定并立刻刷顶栏
+    Bq27220Gauge::GetInstance().ResetFilter();
+    if (auto* disp = LVAdapterDisplay::Instance()) {
+        disp->UpdateStatusBar(true);
+    }
+
     if (TaskScreen::IsActive()) {
         TaskScreen::OnResumeFromStandby();
     }
     BookScreen::OnResumeFromStandby();
+    SettingsScreen_OnResumeFromStandby();
+    SettingsTestBatteryScreen_ResumeFromStandby();
+    if (auto* disp = LVAdapterDisplay::Instance()) {
+        disp->ResumeStandbyBackgroundWork();
+    }
     if (AssistantScreen::IsActive()) {
         Application::GetInstance().Schedule([]() {
             Application::GetInstance().StartXiaozhiVoice(false);
@@ -204,8 +233,8 @@ bool StandbyScreen::IsPaintReady() {
     if (!s_host_alive) {
         return false;
     }
-    if (s_variant == Variant::Wallpaper) {
-        return standby_wallpaper::IsContentReady();
+    if (s_variant == StandbyVariant::Wallpaper) {
+        return StandbyWallpaper_IsContentReady();
     }
     return true;
 }
@@ -231,7 +260,7 @@ bool StandbyScreen::HandleBootClick() {
     if (!s_host_alive) {
         return false;
     }
-    ESP_LOGI(TAG, "boot short -> ignore (stay standby)");
+    ESP_LOGD(TAG, "boot short -> ignore (stay standby)");
     return true;
 }
 
@@ -246,6 +275,6 @@ bool StandbyScreen::HandleBootLongPress() {
 
 void StandbyScreen::EnsureWeatherCached() {
     // 天气缓存与变体无关：开机仍灌，经典页可立刻用；壁纸页不读 UI。
-    standby_classic::EnsureWeatherCached();
+    StandbyClassic_EnsureWeatherCached();
 }
 

@@ -29,6 +29,10 @@ constexpr size_t kChapterEntrySize = 32;
 constexpr size_t kBlockHeaderSize = 8;
 constexpr size_t kImagePayloadHeader = 12;
 
+bool BadChapterTitle(const std::string& t) {
+    return t.empty() || t == "未知" || t == "未命名" || t == "Unknown" || t == "Untitled";
+}
+
 constexpr uint8_t kBlockText = 0x01;
 constexpr uint8_t kBlockImage = 0x02;
 constexpr uint8_t kBfZlib = 0x01;
@@ -177,7 +181,7 @@ bool EbookDocument::Open(const char* path) {
         Close();
         return false;
     }
-    ESP_LOGI(TAG, "open %s chapters=%d chunk_max=%u title=%s book_id=%s", path,
+    ESP_LOGD(TAG, "open %s chapters=%d chunk_max=%u title=%s book_id=%s", path,
              ChapterCount(), static_cast<unsigned>(chunk_max_), title_.c_str(),
              book_id_.empty() ? "-" : book_id_.c_str());
     return true;
@@ -398,7 +402,8 @@ bool EbookDocument::ReadChapterIndex() {
                 !ReadExact(fp_, c.title.data(), title_len)) {
                 return false;
             }
-        } else {
+        }
+        if (BadChapterTitle(c.title)) {
             char buf[32];
             std::snprintf(buf, sizeof(buf), UiChapterFmt(), static_cast<int>(i + 1));
             c.title = buf;

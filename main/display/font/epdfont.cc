@@ -400,7 +400,7 @@ epdfont_t* epdfont_open(const char* path) {
     f->lv.fallback = nullptr;
     f->lv.user_data = nullptr;
 
-    ESP_LOGI(TAG, "opened %s: glyphs=%u intervals=%u bpp=%u line_h=%u", path,
+    ESP_LOGD(TAG, "opened %s: glyphs=%u intervals=%u bpp=%u line_h=%u", path,
              static_cast<unsigned>(hdr.glyph_count), static_cast<unsigned>(hdr.interval_count), bpp,
              hdr.line_height);
     return f;
@@ -524,7 +524,7 @@ bool epdfont_prewarm_utf8(epdfont_t* font, const char* utf8, size_t len) {
         font->page_bitmap_used += n.bmp_len;
     }
 
-    ESP_LOGI(TAG, "prewarm %u glyphs, %u bytes", static_cast<unsigned>(font->page_slot_count),
+    ESP_LOGD(TAG, "prewarm %u glyphs, %u bytes", static_cast<unsigned>(font->page_slot_count),
              static_cast<unsigned>(font->page_bitmap_used));
     return true;
 }

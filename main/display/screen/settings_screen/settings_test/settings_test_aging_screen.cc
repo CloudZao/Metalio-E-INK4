@@ -22,53 +22,52 @@
 
 LV_FONT_DECLARE(font_misans_regular_160_2);
 
-namespace {
 
-constexpr const char* TAG = "SettingsTestAging";
-constexpr const char* kScreenId = "settings_test_aging";
-constexpr uint32_t kCounterPeriodMs = 10000;
+static constexpr const char* TAG = "SettingsTestAging";
+static constexpr const char* kScreenId = "settings_test_aging";
+static constexpr uint32_t kCounterPeriodMs = 10000;
 /** factory_test_audio ≈2.25s；PlaySound 返回只表示入队，需再等播完 */
-constexpr uint32_t kAudioClipMs = 2500;
+static constexpr uint32_t kAudioClipMs = 2500;
 /** 播完后再隔 5s 进入下一轮 */
-constexpr uint32_t kAudioGapMs = 5000;
-constexpr uint32_t kAudioReplayAfterMs = kAudioClipMs + kAudioGapMs;
+static constexpr uint32_t kAudioGapMs = 5000;
+static constexpr uint32_t kAudioReplayAfterMs = kAudioClipMs + kAudioGapMs;
 /** 马达：震 0.5s → 停 10s，one-shot 链式循环 */
-constexpr uint32_t kVibeOnMs = 500;
-constexpr uint32_t kVibeOffMs = 10000;
-constexpr lv_coord_t kPad = 12;
+static constexpr uint32_t kVibeOnMs = 500;
+static constexpr uint32_t kVibeOffMs = 10000;
+static constexpr lv_coord_t kPad = 12;
 
 /** 与书库/清单标题一致：内置 fontpack 30@2，失败回退 UI 25@2 */
-const lv_font_t* AgingTitleFont() {
+static const lv_font_t* AgingTitleFont() {
     const lv_font_t* f = fontpack_lv_font_get(30, 2);
     return f != nullptr ? f : fontpack_lv_font_ui();
 }
 
-lv_obj_t* s_scr = nullptr;
-lv_obj_t* s_counter_lbl = nullptr;
-esp_timer_handle_t s_counter_esp_timer = nullptr;
-esp_timer_handle_t s_audio_loop_timer = nullptr;
-esp_timer_handle_t s_vibe_loop_timer = nullptr;
+static lv_obj_t* s_scr = nullptr;
+static lv_obj_t* s_counter_lbl = nullptr;
+static esp_timer_handle_t s_counter_esp_timer = nullptr;
+static esp_timer_handle_t s_audio_loop_timer = nullptr;
+static esp_timer_handle_t s_vibe_loop_timer = nullptr;
 
-std::atomic<bool> s_active{false};
-std::atomic<uint32_t> s_session{0};
-std::atomic<bool> s_play_pending{false};
-std::atomic<bool> s_vibe_on{false};
-TaskHandle_t s_audio_init_task = nullptr;
+static std::atomic<bool> s_active{false};
+static std::atomic<uint32_t> s_session{0};
+static std::atomic<bool> s_play_pending{false};
+static std::atomic<bool> s_vibe_on{false};
+static TaskHandle_t s_audio_init_task = nullptr;
 
-bool s_holding_testing_state = false;
-bool s_holding_standby_inhibit = false;
-bool s_owns_audio_service = false;
-DeviceState s_saved_device_state = kDeviceStateIdle;
-uint32_t s_counter = 0;
+static bool s_holding_testing_state = false;
+static bool s_holding_standby_inhibit = false;
+static bool s_owns_audio_service = false;
+static DeviceState s_saved_device_state = kDeviceStateIdle;
+static uint32_t s_counter = 0;
 
-void ClearStatusBindings() {
+static void ClearStatusBindings() {
     // 全屏无顶栏：必须摘掉上一页控件指针，否则 1Hz UpdateStatusBar 写已释放对象搞坏 LVGL
     if (auto* disp = LVAdapterDisplay::Instance()) {
         disp->BindStatusWidgets(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     }
 }
 
-int DigitsPerLine() {
+static int DigitsPerLine() {
     const lv_font_t* font = &font_misans_regular_160_2;
     lv_point_t sz = {};
     lv_text_get_size(&sz, "0", font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
@@ -80,7 +79,7 @@ int DigitsPerLine() {
     return n < 1 ? 1 : n;
 }
 
-void FormatWrappedCounter(char* out, size_t out_sz, uint32_t value) {
+static void FormatWrappedCounter(char* out, size_t out_sz, uint32_t value) {
     if (out == nullptr || out_sz == 0) {
         return;
     }
@@ -103,7 +102,7 @@ void FormatWrappedCounter(char* out, size_t out_sz, uint32_t value) {
     out[(o < out_sz) ? o : (out_sz - 1)] = '\0';
 }
 
-void UpdateCounterLabel() {
+static void UpdateCounterLabel() {
     if (s_counter_lbl == nullptr || !lv_obj_is_valid(s_counter_lbl)) {
         return;
     }
@@ -120,7 +119,7 @@ void UpdateCounterLabel() {
     }
 }
 
-void EnterAudioTestingState() {
+static void EnterAudioTestingState() {
     if (s_holding_testing_state) {
         return;
     }
@@ -132,7 +131,7 @@ void EnterAudioTestingState() {
     s_holding_testing_state = true;
 }
 
-void LeaveAudioTestingState() {
+static void LeaveAudioTestingState() {
     if (!s_holding_testing_state) {
         return;
     }
@@ -148,7 +147,7 @@ void LeaveAudioTestingState() {
     app.SetDeviceState(restore);
 }
 
-void AcquireStandbyInhibit() {
+static void AcquireStandbyInhibit() {
     if (s_holding_standby_inhibit) {
         return;
     }
@@ -156,7 +155,7 @@ void AcquireStandbyInhibit() {
     s_holding_standby_inhibit = true;
 }
 
-void ReleaseStandbyInhibit() {
+static void ReleaseStandbyInhibit() {
     if (!s_holding_standby_inhibit) {
         return;
     }
@@ -164,7 +163,7 @@ void ReleaseStandbyInhibit() {
     PowerPolicy::GetInstance().Release(PowerNeed::StandbyInhibit);
 }
 
-void StopCounterEspTimer() {
+static void StopCounterEspTimer() {
     if (s_counter_esp_timer != nullptr) {
         esp_timer_stop(s_counter_esp_timer);
         esp_timer_delete(s_counter_esp_timer);
@@ -172,7 +171,7 @@ void StopCounterEspTimer() {
     }
 }
 
-void StopAudioLoopTimer() {
+static void StopAudioLoopTimer() {
     if (s_audio_loop_timer != nullptr) {
         esp_timer_stop(s_audio_loop_timer);
         esp_timer_delete(s_audio_loop_timer);
@@ -180,7 +179,7 @@ void StopAudioLoopTimer() {
     }
 }
 
-void StopVibeLoopTimer() {
+static void StopVibeLoopTimer() {
     if (s_vibe_loop_timer != nullptr) {
         esp_timer_stop(s_vibe_loop_timer);
         esp_timer_delete(s_vibe_loop_timer);
@@ -188,9 +187,9 @@ void StopVibeLoopTimer() {
     }
 }
 
-void ApplyVibePhase(bool on, uint32_t session);
+static void ApplyVibePhase(bool on, uint32_t session);
 
-void OnVibeLoopEspTimer(void* arg) {
+static void OnVibeLoopEspTimer(void* arg) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
@@ -199,7 +198,7 @@ void OnVibeLoopEspTimer(void* arg) {
     ApplyVibePhase(!s_vibe_on.load(std::memory_order_acquire), session);
 }
 
-void EnsureVibeLoopTimer(uint32_t session) {
+static void EnsureVibeLoopTimer(uint32_t session) {
     if (s_vibe_loop_timer != nullptr) {
         return;
     }
@@ -217,7 +216,7 @@ void EnsureVibeLoopTimer(uint32_t session) {
     }
 }
 
-void ApplyVibePhase(bool on, uint32_t session) {
+static void ApplyVibePhase(bool on, uint32_t session) {
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
     }
@@ -238,7 +237,7 @@ void ApplyVibePhase(bool on, uint32_t session) {
     }
 }
 
-void ReleaseOwnedAudioIfNeeded() {
+static void ReleaseOwnedAudioIfNeeded() {
     if (!s_owns_audio_service) {
         return;
     }
@@ -251,9 +250,9 @@ void ReleaseOwnedAudioIfNeeded() {
     app.StopAudioServiceIfRunning();
 }
 
-void SchedulePlay(uint32_t session);
+static void SchedulePlay(uint32_t session);
 
-void OnAudioLoopEspTimer(void* arg) {
+static void OnAudioLoopEspTimer(void* arg) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
@@ -261,7 +260,7 @@ void OnAudioLoopEspTimer(void* arg) {
     SchedulePlay(session);
 }
 
-void EnsureAudioLoopTimer(uint32_t session) {
+static void EnsureAudioLoopTimer(uint32_t session) {
     if (s_audio_loop_timer != nullptr) {
         return;
     }
@@ -279,7 +278,7 @@ void EnsureAudioLoopTimer(uint32_t session) {
     }
 }
 
-void ArmNextAudioPlay(uint32_t session) {
+static void ArmNextAudioPlay(uint32_t session) {
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
     }
@@ -295,7 +294,7 @@ void ArmNextAudioPlay(uint32_t session) {
     }
 }
 
-void PlayFactoryAudioOnMain(uint32_t session) {
+static void PlayFactoryAudioOnMain(uint32_t session) {
     struct Guard {
         ~Guard() { s_play_pending.store(false, std::memory_order_release); }
     } guard;
@@ -314,7 +313,7 @@ void PlayFactoryAudioOnMain(uint32_t session) {
     ArmNextAudioPlay(session);
 }
 
-void SchedulePlay(uint32_t session) {
+static void SchedulePlay(uint32_t session) {
     bool expected = false;
     if (!s_play_pending.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
@@ -322,7 +321,7 @@ void SchedulePlay(uint32_t session) {
     Application::GetInstance().Schedule([session]() { PlayFactoryAudioOnMain(session); });
 }
 
-void AsyncApplyCounter(void* p) {
+static void AsyncApplyCounter(void* p) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
@@ -332,7 +331,7 @@ void AsyncApplyCounter(void* p) {
     ESP_LOGI(TAG, "counter=%lu", static_cast<unsigned long>(s_counter));
 }
 
-void OnCounterEspTimer(void* arg) {
+static void OnCounterEspTimer(void* arg) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
@@ -344,7 +343,7 @@ void OnCounterEspTimer(void* arg) {
     }
 }
 
-bool StartCounterEspTimer(uint32_t session) {
+static bool StartCounterEspTimer(uint32_t session) {
     StopCounterEspTimer();
     const esp_timer_create_args_t args = {
         .callback = &OnCounterEspTimer,
@@ -369,7 +368,7 @@ bool StartCounterEspTimer(uint32_t session) {
     return true;
 }
 
-void AsyncArmAudioLoop(void* p) {
+static void AsyncArmAudioLoop(void* p) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
     if (!s_active.load(std::memory_order_acquire) || s_session.load(std::memory_order_acquire) != session) {
         return;
@@ -378,7 +377,7 @@ void AsyncArmAudioLoop(void* p) {
     SchedulePlay(session);
 }
 
-void AudioInitTask(void* arg) {
+static void AudioInitTask(void* arg) {
     const uint32_t session = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
     auto& app = Application::GetInstance();
     const bool was_running = app.GetAudioService().IsStarted();
@@ -402,7 +401,7 @@ void AudioInitTask(void* arg) {
     vTaskDelete(nullptr);
 }
 
-void KickAudioInit(uint32_t session) {
+static void KickAudioInit(uint32_t session) {
     if (s_audio_init_task != nullptr) {
         return;
     }
@@ -422,7 +421,7 @@ void KickAudioInit(uint32_t session) {
     }
 }
 
-void TearDownRuntime() {
+static void TearDownRuntime() {
     StopCounterEspTimer();
     StopAudioLoopTimer();
     StopVibeLoopTimer();
@@ -440,7 +439,7 @@ void TearDownRuntime() {
     ReleaseOwnedAudioIfNeeded();
 }
 
-void OnDeleted(lv_event_t* e) {
+static void OnDeleted(lv_event_t* e) {
     if (lv_event_get_target(e) != s_scr) {
         return;
     }
@@ -452,7 +451,6 @@ void OnDeleted(lv_event_t* e) {
     ESP_LOGI(TAG, "aging test screen deleted");
 }
 
-}  // namespace
 
 bool SettingsTestAgingScreen::IsActive() {
     return s_active.load(std::memory_order_acquire);
